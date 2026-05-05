@@ -33,25 +33,6 @@ export function ConfigScreen() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionLabel}>SESSÃO ATIVA</Text>
-        <View style={styles.codeBox}>
-          <Text style={styles.code}>{player?.code ?? '—'}</Text>
-        </View>
-      </View>
-
-      {player && (
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>PERSONAGEM</Text>
-          <View style={styles.charBox}>
-            <Text style={styles.charNome}>{player.char.name}</Text>
-            <Text style={styles.charSub}>
-              {player.char.race} · {player.char.skillClass} · Nível {player.char.level}
-            </Text>
-          </View>
-        </View>
-      )}
-
-      <View style={styles.section}>
         <Text style={styles.sectionLabel}>IP DO SERVIDOR</Text>
         <TextInput
           style={styles.ipInput}

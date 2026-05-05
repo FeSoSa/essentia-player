@@ -28,10 +28,10 @@ export function GameLayout() {
   }[activeTab];
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom, paddingLeft: insets.left, paddingRight: insets.right }]}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
       <Sidebar />
       <View style={styles.content}>{screen}</View>
-      {fastAction?.active && <FastActionOverlay />}
+      {fastAction?.active && activeTab !== 'geral' && <FastActionOverlay />}
     </View>
   );
 }

@@ -5,18 +5,22 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
-import type { Player, GameImage, FastAction, Slot } from '@/types';
+import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance } from '@/types';
 
 export default function GameScreen() {
   const player = usePlayerStore((s) => s.player);
   const setPlayer = usePlayerStore((s) => s.setPlayer);
   const setSkillTree = usePlayerStore((s) => s.setSkillTree);
-  const updateSlotCooldowns = usePlayerStore((s) => s.updateSlotCooldowns);
+  const setEssencias = usePlayerStore((s) => s.setEssencias);
   const setActiveImage = useGameStore((s) => s.setActiveImage);
   const setFastAction = useGameStore((s) => s.setFastAction);
+  const setInitiative = useGameStore((s) => s.setInitiative);
+  const incrementTurn = useGameStore((s) => s.incrementTurn);
+  const setEnemies = useGameStore((s) => s.setEnemies);
+  const setBosses = useGameStore((s) => s.setBosses);
 
   useEffect(() => {
     let mounted = true;
@@ -38,7 +42,14 @@ export default function GameScreen() {
         return;
       }
 
-      const stomp = await connectStomp();
+      let stomp;
+      try {
+        stomp = await connectStomp();
+        console.log('[game] STOMP connected, subscribing...');
+      } catch (err) {
+        console.error('[game] STOMP connection failed:', err);
+        return;
+      }
 
       // Backend pushes full Player on /topic/player/{id}
       stomp.subscribe(`/topic/player/${playerId}`, (msg) => {
@@ -57,26 +68,43 @@ export default function GameScreen() {
         setFastAction(fa.active ? fa : null);
       });
 
-      stomp.subscribe('/topic/turn', (msg) => {
+      stomp.subscribe('/topic/initiative', (msg) => {
         if (!mounted) return;
-        // After turn advance, slots cooldowns are updated in the player broadcast
-        // but also try to parse a slots array if the server sends one
-        try {
-          const data = JSON.parse(msg.body);
-          if (Array.isArray(data?.slots)) {
-            updateSlotCooldowns(data.slots as Slot[]);
-          }
-        } catch {
-          // ignore — player:update will carry the updated slots anyway
-        }
+        const entries: InitiativeEntry[] = JSON.parse(msg.body);
+        setInitiative(entries);
       });
 
-      // Fetch skill tree after connecting
+      stomp.subscribe('/topic/turn', (msg) => {
+        if (!mounted) return;
+        incrementTurn();
+      });
+
+      stomp.subscribe('/topic/combat/enemies', (msg) => {
+        if (!mounted) return;
+        setEnemies(JSON.parse(msg.body) as EnemyInstance[]);
+      });
+
+      stomp.subscribe('/topic/combat/bosses', (msg) => {
+        if (!mounted) return;
+        setBosses(JSON.parse(msg.body) as BossInstance[]);
+      });
+
+      // Fetch skill tree, essencias catalog, and current combat state
       try {
-        const tree = await getSkillTree(playerId);
-        if (mounted) setSkillTree(tree);
+        const [tree, essencias, enemies, bosses] = await Promise.all([
+          getSkillTree(playerId),
+          getEssencias(),
+          getCombatEnemies(),
+          getCombatBosses(),
+        ]);
+        if (mounted) {
+          setSkillTree(tree);
+          setEssencias(essencias);
+          setEnemies(enemies);
+          setBosses(bosses);
+        }
       } catch {
-        // non-critical — screen will show empty state
+        // non-critical — screens will show empty states
       }
     }
 

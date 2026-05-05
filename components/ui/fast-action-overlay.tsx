@@ -35,7 +35,7 @@ export function FastActionOverlay() {
   return (
     <View style={styles.overlay}>
       <View style={styles.card}>
-        <Text style={styles.title}>{fastAction.titulo}</Text>
+        <Text style={styles.title}>{fastAction.title}</Text>
 
         {voted ? (
           <Text style={styles.votedText}>Voto registrado</Text>
@@ -52,7 +52,7 @@ export function FastActionOverlay() {
                 {loading ? (
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
-                  <Text style={styles.optionText}>{opt.label}</Text>
+                  <Text style={styles.optionText}>{opt.text}</Text>
                 )}
               </TouchableOpacity>
             ))}

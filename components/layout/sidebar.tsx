@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts } from '@/constants/theme';
 import { useGameStore } from '@/store/gameStore';
@@ -30,12 +30,6 @@ export function Sidebar() {
 
   return (
     <View style={styles.sidebar}>
-      {/* Logo */}
-      <View style={styles.logoArea}>
-        <Text style={styles.logo}>E</Text>
-        <View style={styles.logoSep} />
-      </View>
-
       {/* Tabs */}
       <View style={styles.tabs}>
         {TABS.map((tab) => {
@@ -48,7 +42,13 @@ export function Sidebar() {
             <TouchableOpacity
               key={tab.id}
               style={[styles.tab, isActive && styles.tabActive]}
-              onPress={() => setActiveTab(tab.id)}
+              onPress={() => {
+                if (tab.id === 'docs') {
+                  Linking.openURL('https://www.notion.so/Essentia-Jogador-3481bff015f8808fad2ee78143af6036');
+                  return;
+                }
+                setActiveTab(tab.id);
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.iconWrap}>
@@ -88,34 +88,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  logoArea: {
-    width: '100%',
-    alignItems: 'center',
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  logo: {
-    fontFamily: Fonts.title,
-    fontWeight: '700',
-    fontSize: 22,
-    color: Colors.ember,
-    lineHeight: 28,
-  },
-  logoSep: {
-    width: '60%',
-    height: 1,
-    backgroundColor: Colors.border,
-    marginTop: 8,
-  },
-
   tabs: {
     flex: 1,
     width: '100%',
     paddingTop: 4,
   },
   tab: {
+    flex: 1,
     alignItems: 'center',
-    paddingVertical: 10,
+    justifyContent: 'center',
     borderLeftWidth: 3,
     borderLeftColor: 'transparent',
   },

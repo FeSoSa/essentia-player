@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
+import { StatusBar } from 'react-native';
 import { DarkTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
@@ -11,6 +11,7 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   useEffect(() => {
     ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+    StatusBar.setHidden(true, 'none');
     SplashScreen.hideAsync();
   }, []);
 
@@ -20,7 +21,6 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="game" />
       </Stack>
-      <StatusBar hidden />
     </ThemeProvider>
   );
 }

@@ -38,6 +38,7 @@ export interface CharInfo {
   slotsClass: number;
   slotsFree: number;
   slotsTotal: number;
+  portraitUrl?: string;
 }
 
 export interface Slot {
@@ -75,9 +76,17 @@ export interface Equipment {
 
 export interface EssenciaObtida {
   essenciaId: string;
-  nome: string;
-  tipo: string;
-  color?: string;
+  attributeBonusActive: boolean;
+  unlockedSkillIds: string[];
+}
+
+export interface Essencia {
+  id: string;
+  name: string;
+  type: string; // "Grande" | "Mitica" | "Derivada"
+  desc: string;
+  attributeBonus: Record<string, number>;
+  skillIds: string[];
 }
 
 export interface PendingRequest {
@@ -141,17 +150,55 @@ export interface GameImage {
 
 export interface FastOption {
   id: string;
-  label: string;
+  text: string;
   color: string;
 }
 
 export interface FastAction {
   active: boolean;
-  titulo: string;
+  title: string;
   options: FastOption[];
   lockOnePerPlayer: boolean;
+  lockedPlayers: string[];
+  answers: Record<string, string>;
+}
+
+export interface InitiativeEntry {
+  playerId: string;
+  name: string;
+  value: number;
 }
 
 export interface TurnUpdate {
-  turn: number;
+  message: string;
+}
+
+export interface EnemyInstance {
+  instanceId: string;
+  templateId?: string;
+  name: string;
+  type: string;
+  icon?: string;
+  hpCurrent: number;
+  hpMax: number;
+  xp: number;
+  notes?: string;
+}
+
+export interface BossPhase {
+  phaseNumber: number;
+  name: string;
+  hpMax: number;
+}
+
+export interface BossInstance {
+  instanceId: string;
+  templateId?: string;
+  name: string;
+  icon?: string;
+  phases: BossPhase[];
+  currentPhase: number;
+  hpCurrent: number;
+  xp: number;
+  notes?: string;
 }
