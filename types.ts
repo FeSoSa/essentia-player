@@ -92,8 +92,8 @@ export interface Essencia {
 export interface PendingRequest {
   id: string;
   type: string;
-  description: string;
-  status: string;
+  itemId: string;
+  timestamp: string;
 }
 
 export interface StatusEffect {
@@ -142,9 +142,10 @@ export interface SkillTreeEntry {
 
 // Game state types (from WebSocket topics)
 export interface GameImage {
-  id?: string;
+  id: string;
   url: string;
-  titulo?: string;
+  title: string;
+  timestamp: string;
   active: boolean;
 }
 

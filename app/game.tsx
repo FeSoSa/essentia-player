@@ -5,17 +5,18 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getImages } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
 import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance } from '@/types';
+// GameImage used in STOMP handler type annotation below
 
 export default function GameScreen() {
   const player = usePlayerStore((s) => s.player);
   const setPlayer = usePlayerStore((s) => s.setPlayer);
   const setSkillTree = usePlayerStore((s) => s.setSkillTree);
   const setEssencias = usePlayerStore((s) => s.setEssencias);
-  const setActiveImage = useGameStore((s) => s.setActiveImage);
+  const setImages = useGameStore((s) => s.setImages);
   const setFastAction = useGameStore((s) => s.setFastAction);
   const setInitiative = useGameStore((s) => s.setInitiative);
   const incrementTurn = useGameStore((s) => s.incrementTurn);
@@ -58,8 +59,8 @@ export default function GameScreen() {
         setPlayer(updated);
       });
 
-      stomp.subscribe('/topic/image', (msg) => {
-        if (mounted) setActiveImage(JSON.parse(msg.body) as GameImage);
+      stomp.subscribe('/topic/images', (msg) => {
+        if (mounted) setImages(JSON.parse(msg.body) as GameImage[]);
       });
 
       stomp.subscribe('/topic/fast-action', (msg) => {
@@ -91,17 +92,19 @@ export default function GameScreen() {
 
       // Fetch skill tree, essencias catalog, and current combat state
       try {
-        const [tree, essencias, enemies, bosses] = await Promise.all([
+        const [tree, essencias, enemies, bosses, imgs] = await Promise.all([
           getSkillTree(playerId),
           getEssencias(),
           getCombatEnemies(),
           getCombatBosses(),
+          getImages(),
         ]);
         if (mounted) {
           setSkillTree(tree);
           setEssencias(essencias);
           setEnemies(enemies);
           setBosses(bosses);
+          setImages(imgs);
         }
       } catch {
         // non-critical — screens will show empty states

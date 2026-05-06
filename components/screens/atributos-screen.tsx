@@ -14,7 +14,6 @@ const ATRIBUTOS: { key: AtribKey; label: string }[] = [
   { key: 'flow', label: 'Fluxo' },
   { key: 'wisdom', label: 'Sabedoria' },
   { key: 'presence', label: 'Presença' },
-  { key: 'defense', label: 'Defesa' },
 ];
 
 export function AtributosScreen() {

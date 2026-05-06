@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getServerIp } from './storage';
-import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance } from '@/types';
+import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage } from '@/types';
 
 const api = axios.create();
 
@@ -71,8 +71,23 @@ export async function unlockSkill(playerId: string, skillId: string): Promise<vo
   await api.post(`/api/players/${playerId}/unlock-skill`, { skillId });
 }
 
+export async function equipItem(playerId: string, itemId: string): Promise<Player> {
+  const res = await api.post<Player>(`/api/players/${playerId}/equip`, { itemId });
+  return res.data;
+}
+
+export async function unequipItem(playerId: string, slot: string): Promise<Player> {
+  const res = await api.delete<Player>(`/api/players/${playerId}/equipment/${slot}`);
+  return res.data;
+}
+
 export async function voteFastAction(playerId: string, optionId: string): Promise<void> {
   await api.post('/api/fast-action/vote', { playerId, optionId });
+}
+
+export async function getImages(): Promise<GameImage[]> {
+  const res = await api.get<GameImage[]>('/api/images');
+  return res.data;
 }
 
 export async function getCombatEnemies(): Promise<EnemyInstance[]> {

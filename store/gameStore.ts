@@ -3,17 +3,20 @@ import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, Boss
 
 interface GameStore {
   activeTab: TabId;
-  activeImage: GameImage | null;
-  fastAction: FastAction | null;
+  images: GameImage[];
   hasNewImage: boolean;
+  currentImageIndex: number;
+  fastAction: FastAction | null;
   initiative: InitiativeEntry[];
   turnCount: number;
   enemies: EnemyInstance[];
   bosses: BossInstance[];
   setActiveTab: (tab: TabId) => void;
-  setActiveImage: (img: GameImage) => void;
-  setFastAction: (fa: FastAction | null) => void;
+  setImages: (imgs: GameImage[]) => void;
+  nextImage: () => void;
+  prevImage: () => void;
   clearNewImage: () => void;
+  setFastAction: (fa: FastAction | null) => void;
   setInitiative: (entries: InitiativeEntry[]) => void;
   incrementTurn: () => void;
   setEnemies: (enemies: EnemyInstance[]) => void;
@@ -22,27 +25,51 @@ interface GameStore {
 
 export const useGameStore = create<GameStore>((set, get) => ({
   activeTab: 'geral',
-  activeImage: null,
-  fastAction: null,
+  images: [],
   hasNewImage: false,
+  currentImageIndex: 0,
+  fastAction: null,
   initiative: [],
   turnCount: 0,
   enemies: [],
   bosses: [],
+
   setActiveTab: (tab) =>
     set({ activeTab: tab, hasNewImage: tab === 'mapa' ? false : get().hasNewImage }),
-  setActiveImage: (img) =>
-    set((state) => ({
-      activeImage: img,
-      hasNewImage: state.activeTab !== 'mapa' && img.active,
-    })),
-  setFastAction: (fa) => set({ fastAction: fa }),
+
+  setImages: (imgs) => {
+    const prev = get().images;
+    const prevActiveIds = new Set(prev.filter(i => i.active).map(i => i.id));
+    const newActiveIds  = imgs.filter(i => i.active).map(i => i.id);
+    const hasNew = newActiveIds.some(id => !prevActiveIds.has(id));
+    const wasOnMapa = get().activeTab === 'mapa';
+    // clamp index to new active count
+    const activeCount = newActiveIds.length;
+    const idx = Math.min(get().currentImageIndex, Math.max(0, activeCount - 1));
+    set({ images: imgs, currentImageIndex: idx, hasNewImage: hasNew && !wasOnMapa });
+  },
+
+  nextImage: () => {
+    const active = get().images.filter(i => i.active);
+    if (active.length < 2) return;
+    set((s) => ({ currentImageIndex: (s.currentImageIndex + 1) % active.length }));
+  },
+
+  prevImage: () => {
+    const active = get().images.filter(i => i.active);
+    if (active.length < 2) return;
+    set((s) => ({ currentImageIndex: (s.currentImageIndex - 1 + active.length) % active.length }));
+  },
+
   clearNewImage: () => set({ hasNewImage: false }),
+
+  setFastAction: (fa) => set({ fastAction: fa }),
+
   setInitiative: (entries) => set({
     initiative: entries,
-    // reset round counter when master clears initiative (end of combat)
     turnCount: entries.length === 0 ? 0 : get().turnCount,
   }),
+
   incrementTurn: () => set((state) => ({ turnCount: state.turnCount + 1 })),
   setEnemies: (enemies) => set({ enemies }),
   setBosses: (bosses) => set({ bosses }),

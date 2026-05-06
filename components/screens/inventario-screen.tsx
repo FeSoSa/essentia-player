@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts } from '@/constants/theme';
 import { ItemModal } from '@/components/ui/item-modal';
+import { equipItem, unequipItem } from '@/lib/api';
 import { usePlayerStore } from '@/store/playerStore';
 import type { Item, WeaponEquip } from '@/types';
 
@@ -22,10 +23,22 @@ type ModalState = { item: Item; mode: 'details' | 'use' } | null;
 
 export function InventarioScreen() {
   const player = usePlayerStore((s) => s.player)!;
+  const setPlayer = usePlayerStore((s) => s.setPlayer);
   const [menu, setMenu] = useState<MenuState>(null);
   const [modal, setModal] = useState<ModalState>(null);
 
-  const pendentesCount = player.pendingRequests.filter((p) => p.status === 'pendente').length;
+  const pendentesCount = player.pendingRequests.length;
+
+  async function handleEquip(item: Item) {
+    setMenu(null);
+    const updated = await equipItem(player.id, item.id);
+    setPlayer(updated);
+  }
+
+  async function handleUnequip(slotKey: EquipSlotKey) {
+    const updated = await unequipItem(player.id, slotKey);
+    setPlayer(updated);
+  }
 
   return (
     <View style={styles.container}>
@@ -44,7 +57,12 @@ export function InventarioScreen() {
           {EQUIPMENT_SLOTS.map(({ key, label, icon }) => {
             const equipped = player.equipment[key] as WeaponEquip | undefined;
             return (
-              <View key={key} style={styles.equipSlot}>
+              <TouchableOpacity
+                key={key}
+                style={styles.equipSlot}
+                onPress={equipped ? () => handleUnequip(key) : undefined}
+                activeOpacity={equipped ? 0.7 : 1}
+              >
                 <MaterialCommunityIcons
                   name={(equipped?.icon ?? icon) as any}
                   size={18}
@@ -59,7 +77,10 @@ export function InventarioScreen() {
                     <Text style={styles.textMuted}>— vazio</Text>
                   )}
                 </View>
-              </View>
+                {equipped && (
+                  <MaterialCommunityIcons name="close-circle-outline" size={14} color={Colors.muted} />
+                )}
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -117,12 +138,21 @@ export function InventarioScreen() {
             >
               <Text style={styles.menuOptionText}>Ver detalhes</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuOption}
-              onPress={() => { setModal({ item: menu.item, mode: 'use' }); setMenu(null); }}
-            >
-              <Text style={styles.menuOptionText}>Usar item</Text>
-            </TouchableOpacity>
+            {menu.item.equipSlot ? (
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => handleEquip(menu.item)}
+              >
+                <Text style={styles.menuOptionText}>Equipar</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => { setModal({ item: menu.item, mode: 'use' }); setMenu(null); }}
+              >
+                <Text style={styles.menuOptionText}>Usar item</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.menuOption, styles.menuCancel]} onPress={() => setMenu(null)}>
               <Text style={styles.menuCancelText}>Cancelar</Text>
             </TouchableOpacity>

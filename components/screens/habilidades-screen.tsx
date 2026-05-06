@@ -59,7 +59,7 @@ export function HabilidadesScreen() {
 
       <SectionList
         sections={sections}
-        keyExtractor={(item) => item.skillId}
+        keyExtractor={(item, index) => item.skillId ?? String(index)}
         contentContainerStyle={styles.listContent}
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={

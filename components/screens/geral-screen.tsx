@@ -22,7 +22,7 @@ const ATTR_LABELS: Record<string, string> = {
 const ATTR_ORDER = ['strength', 'agility', 'intelligence', 'resistance', 'flow', 'wisdom', 'presence', 'defense'];
 
 function bonus(val: number): string {
-  const b = Math.floor(val / 5);
+  const b = Math.floor(val / 10);
   return b > 0 ? `+${b}` : b === 0 ? '+0' : `${b}`;
 }
 
@@ -33,6 +33,13 @@ function hpColor(current: number, max: number): string {
   if (pct > 0.33) return '#facc15'; // amarelo
   if (pct > 0.10) return '#f97316'; // laranja
   return Colors.danger;             // vermelho
+}
+
+function normalizePortraitUrl(url: string): string {
+  const fileId =
+    url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)?.[1] ??
+    url.match(/[?&]id=([a-zA-Z0-9_-]+)/)?.[1];
+  return fileId ? `https://drive.google.com/uc?export=view&id=${fileId}` : url;
 }
 
 function essenciaColor(type: string): string {
@@ -54,7 +61,6 @@ export function GeralScreen() {
 
   const [essenciasOpen, setEssenciasOpen] = useState(false);
   const [efeitosOpen, setEfeitosOpen] = useState(false);
-  const [faVoted, setFaVoted] = useState(false);
   const [faLoading, setFaLoading] = useState(false);
 
   const enemies = useGameStore((s) => s.enemies);
@@ -64,12 +70,14 @@ export function GeralScreen() {
   const combatActive = enemies.length > 0 || bosses.length > 0 || initiative.length > 0;
   const currentPlayer = initiative.length > 0 ? initiative[turnCount % initiative.length] : null;
 
+  const faVoted = (fastAction?.lockedPlayers ?? []).includes(player.id);
+  const faTakenOptions = new Set(Object.values(fastAction?.answers ?? {}));
+
   async function handleVote(optionId: string) {
-    if (!player.id || faVoted || faLoading) return;
+    if (!player.id || faVoted || faLoading || faTakenOptions.has(optionId)) return;
     setFaLoading(true);
     try {
       await voteFastAction(player.id, optionId);
-      if (fastAction?.lockOnePerPlayer) setFaVoted(true);
     } catch {
       // silent
     } finally {
@@ -88,7 +96,7 @@ export function GeralScreen() {
         <View style={styles.portraitWrap}>
           {player.char.portraitUrl ? (
             <Image
-              source={{ uri: player.char.portraitUrl }}
+              source={{ uri: normalizePortraitUrl(player.char.portraitUrl), headers: { Referer: '' } }}
               style={styles.portraitImage}
               resizeMode="cover"
             />
@@ -125,10 +133,8 @@ export function GeralScreen() {
                 <View style={styles.xpTrack}>
                   <View style={[styles.xpFill, { width: `${fillPct}%` as any }]} />
                 </View>
-                {player.exp.available > 0 ? (
+                {player.exp.available > 0 && (
                   <Text style={styles.ptsAmber}>{player.exp.available} pts disponíveis</Text>
-                ) : (
-                  <Text style={styles.ptsMuted}>0 pts disponíveis</Text>
                 )}
               </>
             );
@@ -230,17 +236,20 @@ export function GeralScreen() {
                 <Text style={styles.faVoted}>Voto registrado</Text>
               ) : (
                 <View style={styles.faOptions}>
-                  {fastAction.options.map((opt) => (
-                    <TouchableOpacity
-                      key={opt.id}
-                      style={[styles.faCircle, { backgroundColor: opt.color }]}
-                      onPress={() => handleVote(opt.id)}
-                      disabled={faLoading}
-                      activeOpacity={0.75}
-                    >
-                      {faLoading && <ActivityIndicator color="#fff" size="small" />}
-                    </TouchableOpacity>
-                  ))}
+                  {fastAction.options.map((opt) => {
+                    const taken = faTakenOptions.has(opt.id);
+                    return (
+                      <TouchableOpacity
+                        key={opt.id}
+                        style={[styles.faCircle, { backgroundColor: opt.color }, taken && { opacity: 0.3 }]}
+                        onPress={() => handleVote(opt.id)}
+                        disabled={faLoading || taken}
+                        activeOpacity={0.75}
+                      >
+                        {faLoading && !taken && <ActivityIndicator color="#fff" size="small" />}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               )}
             </>
@@ -356,7 +365,7 @@ const styles = StyleSheet.create({
   // Portrait — edge to edge, nome sobreposto
   portraitWrap: {
     width: '100%',
-    height: 110,
+    height: 88,
     backgroundColor: Colors.surface,
     overflow: 'hidden',
   },
@@ -399,8 +408,8 @@ const styles = StyleSheet.create({
   // Content below portrait
   leftContent: {
     flex: 1,
-    padding: 10,
-    gap: 5,
+    padding: 8,
+    gap: 4,
   },
   levelRow: {
     flexDirection: 'row',
@@ -442,30 +451,30 @@ const styles = StyleSheet.create({
   attrGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 3,
+    gap: 2,
   },
   attrCell: {
     width: '23%',
     backgroundColor: Colors.surface,
     borderRadius: 3,
-    paddingVertical: 3,
+    paddingVertical: 2,
     paddingHorizontal: 2,
     alignItems: 'center',
   },
   attrLabel: {
     fontFamily: Fonts.title,
-    fontSize: 8,
+    fontSize: 7,
     color: Colors.muted,
     letterSpacing: 1,
   },
   attrVal: {
     fontFamily: Fonts.title,
-    fontSize: 13,
+    fontSize: 11,
     color: Colors.text,
   },
   attrBonus: {
     fontFamily: Fonts.body,
-    fontSize: 9,
+    fontSize: 8,
     color: Colors.ember,
   },
 
