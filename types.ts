@@ -61,11 +61,10 @@ export interface Item {
 }
 
 export interface DamageResult {
-  totalDamage: number;
-  rolls: number[];
-  formula?: string;
-  costType?: string;
-  costAmount?: number;
+  skillName: string;
+  damage: number | null;
+  costPaid: Array<{ type: string; value?: number; percentual?: number }>;
+  cooldownSet: number;
 }
 
 export interface WeaponEquip {
@@ -194,11 +193,16 @@ export interface SkillTreeEntry {
   equipped: boolean;
   slotId?: string;
   requirementsText?: string;
+  isPassive?: boolean;
   maestria?: {
+    playerSkillId: string;
     level: number;
     totalUses: number;
     nextLevelUses: number;
-    choices?: Array<'aumento' | 'otimizacao'>;
+    choices: Array<'aumento' | 'otimizacao'>;
+    bonusDano: number;     // ex: 0.32 = +32%
+    custoAumento: number;  // ex: 0.24 = +24%
+    reducaoCusto: number;  // ex: 0.16 = -16%
   };
 }
 

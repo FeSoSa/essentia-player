@@ -1,12 +1,12 @@
 import axios from 'axios';
-import { getServerIp } from './storage';
+import { getServerIp, buildHttpBase } from './storage';
 import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar } from '@/types';
 
 const api = axios.create();
 
 api.interceptors.request.use(async (config) => {
-  const ip = await getServerIp();
-  config.baseURL = `http://${ip}:8080`;
+  const host = await getServerIp();
+  config.baseURL = buildHttpBase(host);
   return config;
 });
 
@@ -91,10 +91,10 @@ export async function unlockSkill(playerId: string, skillId: string): Promise<vo
 
 export async function chooseMasteryPath(
   playerId: string,
-  skillId: string,
-  choice: 'aumento' | 'otimizacao'
+  playerSkillId: string,
+  path: 'aumento' | 'otimizacao'
 ): Promise<void> {
-  await api.post(`/api/players/${playerId}/mastery-choice`, { skillId, choice });
+  await api.post(`/api/players/${playerId}/maestria-upgrade`, { playerSkillId, path });
 }
 
 export async function equipItem(playerId: string, itemId: string): Promise<Player> {

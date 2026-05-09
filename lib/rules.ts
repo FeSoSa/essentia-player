@@ -51,6 +51,28 @@ export function initiativeBonus(agiMod: number): number {
 
 export type ArmorWeight = 'none' | 'light' | 'medium' | 'heavy';
 
+// Cumulative bonus per number of aumento/otimizacao choices (index = N-1)
+const MAESTRIA_DANO_BONUS   = [0.10, 0.20, 0.32, 0.45, 0.60] as const;
+const MAESTRIA_CUSTO_AUMENTO = [0.08, 0.16, 0.24, 0.32, 0.40] as const;
+const MAESTRIA_CUSTO_REDUCAO = [0.08, 0.16, 0.24, 0.32, 0.40] as const;
+
+// Usos acumulados necessários para subir ao próximo nível (índice = nível atual 1-4)
+export const MAESTRIA_THRESHOLDS = [0, 3, 8, 16, 28] as const;
+
+export function computeMaestriaEffects(choices: Array<'aumento' | 'otimizacao'>): {
+  bonusDano: number;
+  reducaoCusto: number;
+  custoAumento: number;
+} {
+  const nA = choices.filter((c) => c === 'aumento').length;
+  const nO = choices.filter((c) => c === 'otimizacao').length;
+  return {
+    bonusDano:    nA > 0 ? MAESTRIA_DANO_BONUS[nA - 1]    : 0,
+    custoAumento: nA > 0 ? MAESTRIA_CUSTO_AUMENTO[nA - 1] : 0,
+    reducaoCusto: nO > 0 ? MAESTRIA_CUSTO_REDUCAO[nO - 1] : 0,
+  };
+}
+
 export function getArmorWeight(armorType?: string): ArmorWeight {
   if (!armorType) return 'none';
   const t = armorType.toLowerCase();

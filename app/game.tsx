@@ -71,6 +71,8 @@ export default function GameScreen() {
         if (!mounted) return;
         const updated: Player = JSON.parse(msg.body);
         setPlayer(updated);
+        // Skill tree pode ter mudado (maestria, desbloqueio) — re-fetch silencioso
+        getSkillTree(playerId).then((tree) => { if (mounted) setSkillTree(tree); }).catch(() => {});
       });
 
       stomp.subscribe('/topic/images', (msg) => {

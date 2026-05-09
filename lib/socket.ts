@@ -1,5 +1,5 @@
 import { Client } from '@stomp/stompjs';
-import { getServerIp } from './storage';
+import { getServerIp, buildWsUrl } from './storage';
 
 let client: Client | null = null;
 let onReconnectCallback: (() => void) | null = null;
@@ -12,7 +12,7 @@ export async function connectStomp(onReconnect?: () => void): Promise<Client> {
   initialConnectDone = false;
 
   const ip = await getServerIp();
-  const url = `ws://${ip}:8080/ws-native`;
+  const url = buildWsUrl(ip);
   console.log('[STOMP] connecting to', url);
 
   return new Promise((resolve, reject) => {

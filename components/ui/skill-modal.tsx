@@ -88,9 +88,9 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
     setApplyingDamage(true);
     try {
       if (selectedTarget.kind === 'enemy') {
-        await applyEnemyDamage(selectedTarget.id, result.totalDamage);
+        await applyEnemyDamage(selectedTarget.id, result.damage ?? 0);
       } else {
-        await applyBossDamage(selectedTarget.id, result.totalDamage);
+        await applyBossDamage(selectedTarget.id, result.damage ?? 0);
       }
       handleClose();
     } catch {
@@ -129,13 +129,10 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
             /* ── Resultado ── */
             <View style={styles.resultBlock}>
               <Text style={styles.resultLabel}>DANO TOTAL</Text>
-              <Text style={styles.resultDamage}>{result.totalDamage}</Text>
-              {result.formula && (
-                <Text style={styles.resultFormula}>{result.formula}</Text>
-              )}
-              {result.costType && result.costAmount !== undefined && (
+              <Text style={styles.resultDamage}>{result.damage ?? '—'}</Text>
+              {result.costPaid.length > 0 && (
                 <Text style={styles.resultCost}>
-                  Custo: -{result.costAmount} {result.costType}
+                  Custo: {result.costPaid.map((c) => `${c.value ?? c.percentual ?? 0} ${c.type}`).join(', ')}
                 </Text>
               )}
               {selectedTarget && (
@@ -330,4 +327,29 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   confirmText: { fontFamily: Fonts.title, fontSize: 11, color: Colors.text, letterSpacing: 2 },
+
+  maestriaBlock: {
+    borderWidth: 1, borderColor: Colors.gold, borderRadius: 3,
+    padding: 10, marginBottom: 16, gap: 8,
+  },
+  maestriaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  maestriaLevel: { fontFamily: Fonts.title, fontSize: 11, color: Colors.gold, letterSpacing: 1 },
+  maestriaLevels: { flexDirection: 'row', gap: 6 },
+  maestriaDot: {
+    width: 28, height: 28, borderRadius: 14,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  maestriaDotEmpty: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  maestriaDotAumento: { backgroundColor: Colors.gold },
+  maestriaDotOtimizacao: { backgroundColor: Colors.tealBright },
+  maestriaDotLabel: { fontFamily: Fonts.title, fontSize: 10, color: Colors.bg },
+  maestriaProgress: { fontFamily: Fonts.body, fontSize: 11, color: Colors.muted, fontStyle: 'italic' },
+  maestriaEffects: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  maestriaTag: {
+    borderRadius: 2, paddingHorizontal: 6, paddingVertical: 2,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+  },
+  maestriaTagAumento: { fontFamily: Fonts.title, fontSize: 9, color: Colors.gold, letterSpacing: 1 },
+  maestriaTagOtimizacao: { fontFamily: Fonts.title, fontSize: 9, color: Colors.tealBright, letterSpacing: 1 },
+  maestriaTagCustoExtra: { fontFamily: Fonts.title, fontSize: 9, color: Colors.danger, letterSpacing: 1 },
 });

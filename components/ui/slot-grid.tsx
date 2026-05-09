@@ -59,7 +59,7 @@ export function SlotGrid({ slots, classCount, freeCount, skillMap, onSlotPress }
                 >
                   {filled ? (
                     <>
-                      <Text style={styles.slotName} numberOfLines={2}>
+                      <Text style={styles.slotName}>
                         {skill?.nome ?? '...'}
                       </Text>
                       {skill?.custo && (
@@ -88,12 +88,12 @@ const styles = StyleSheet.create({
   groupLabel: { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 2 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   slot: {
-    width: 80, height: 56, borderWidth: 1, borderStyle: 'dashed',
+    width: 80, minHeight: 56, borderWidth: 1, borderStyle: 'dashed',
     borderRadius: 2, justifyContent: 'center', alignItems: 'center',
     padding: 4, position: 'relative',
   },
   slotFilled: { backgroundColor: Colors.surface, borderStyle: 'solid' },
-  slotName: { fontFamily: Fonts.body, fontSize: 11, color: Colors.text, textAlign: 'center' },
+  slotName: { fontFamily: Fonts.body, fontSize: 10, color: Colors.text, textAlign: 'center' },
   slotCost: { fontFamily: Fonts.title, fontSize: 8, color: Colors.tealBright, marginTop: 2 },
   slotEmpty: { color: Colors.border, fontSize: 18 },
   cooldownText: {

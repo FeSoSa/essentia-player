@@ -33,3 +33,17 @@ export async function getServerIp(): Promise<string> {
 export async function setServerIp(ip: string): Promise<void> {
   await AsyncStorage.setItem(SERVER_IP_KEY, ip);
 }
+
+// Constrói a URL base HTTP a partir do host salvo.
+// Aceita: IP local (192.168.x.x), Tailscale (100.x.x.x) → http://host:8080
+//         ngrok/domínio (contém ponto e letras) → https://host (sem porta)
+export function buildHttpBase(host: string): string {
+  const isIp = /^[\d.]+$/.test(host);
+  return isIp ? `http://${host}:8080` : `https://${host}`;
+}
+
+// Constrói a URL WebSocket a partir do host salvo.
+export function buildWsUrl(host: string): string {
+  const isIp = /^[\d.]+$/.test(host);
+  return isIp ? `ws://${host}:8080/ws-native` : `wss://${host}/ws-native`;
+}

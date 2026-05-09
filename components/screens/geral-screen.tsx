@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
+import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, TextInput, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, type ArmorWeight } from '@/lib/rules';
 import { ResourceBar } from '@/components/ui/resource-bar';
 import { SobrecargaModal } from '@/components/ui/sobrecarga-modal';
+import { SkillInfoModal } from '@/components/ui/skill-info-modal';
 import { GameIcon } from '@/components/ui/game-icon';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { adjustHp, adjustFlow, adjustEther, adjustPressao, voteFastAction, executeDesvio } from '@/lib/api';
-import { SOBRECARGA_LEVELS, type Essencia, type EssenciaObtida, type StatusEffect } from '@/types';
+import { SOBRECARGA_LEVELS, type Essencia, type EssenciaObtida, type StatusEffect, type Slot, type SkillTreeEntry } from '@/types';
 
 const ATTR_LABELS: Record<string, string> = {
   strength: 'FOR',
@@ -65,10 +66,14 @@ export function GeralScreen() {
 
   const [selectedEssencia, setSelectedEssencia] = useState<(EssenciaObtida & { catalog?: Essencia }) | null>(null);
   const [selectedEfeito, setSelectedEfeito] = useState<StatusEffect | null>(null);
+  const [skillModalSlot,  setSkillModalSlot]  = useState<Slot | null>(null);
+  const [skillModalSkill, setSkillModalSkill] = useState<SkillTreeEntry | null>(null);
   const [sobrecargaOpen, setSobrecargaOpen] = useState(false);
   const [faLoading, setFaLoading] = useState(false);
-  const [desvioLoading, setDesvioLoading] = useState(false);
-  const [desvioResult, setDesvioResult] = useState<{ roll: number; bonus: number; total: number; success: boolean; weight: ArmorWeight } | null>(null);
+  const [desvioModalOpen, setDesvioModalOpen] = useState(false);
+  const [desvioInput,     setDesvioInput]     = useState('');
+  const [desvioLoading,   setDesvioLoading]   = useState(false);
+  const [desvioResult,    setDesvioResult]    = useState<{ roll: number; bonus: number; total: number; success: boolean; weight: ArmorWeight } | null>(null);
 
   const sobrecargaAtiva = player.sobrecargaAtiva === true;
   const sobrecargaBonus = sobrecargaAtiva
@@ -87,27 +92,18 @@ export function GeralScreen() {
   const armorWeight = getArmorWeight(player.equipment.armor?.armorWeight);
   const canDesviar = combatActive && armorWeight !== 'heavy' && player.desviosRestantes > 0;
 
-  async function handleDesvio() {
-    if (!canDesviar || desvioLoading) return;
+  async function confirmDesvio() {
+    const roll = parseInt(desvioInput, 10);
+    if (isNaN(roll) || roll < 1) return;
     setDesvioLoading(true);
     try {
-      // Roll dice according to armor type
-      const roll1 = Math.ceil(Math.random() * 20);
-      let roll: number;
-      let bonus = 0;
-      if (armorWeight === 'none') {
-        roll = roll1;
-        bonus = getModifier(player.attributes.agility);
-      } else if (armorWeight === 'medium') {
-        const roll2 = Math.ceil(Math.random() * 20);
-        roll = Math.min(roll1, roll2); // disadvantage
-      } else {
-        roll = roll1; // light: no bonus
-      }
+      const bonus = armorWeight === 'none' ? getModifier(player.attributes.agility) : 0;
       const total = roll + bonus;
       const updated = await executeDesvio(player.id);
       setPlayer(updated);
       setDesvioResult({ roll, bonus, total, success: total >= 12, weight: armorWeight });
+      setDesvioModalOpen(false);
+      setDesvioInput('');
     } catch { /* silent */ }
     finally { setDesvioLoading(false); }
   }
@@ -379,8 +375,8 @@ export function GeralScreen() {
             <View style={styles.midDivider} />
             <TouchableOpacity
               style={[styles.desvioMidSection, !canDesviar && styles.desvioMidDisabled]}
-              onPress={handleDesvio}
-              disabled={!canDesviar || desvioLoading}
+              onPress={() => canDesviar && setDesvioModalOpen(true)}
+              disabled={!canDesviar}
               activeOpacity={0.75}
             >
               <View style={styles.desvioDotsRow}>
@@ -427,11 +423,18 @@ export function GeralScreen() {
           if (!slot) return <View key={key} style={[styles.slotBox, styles.slotEmpty]} />;
           const skill = slot.skillId ? skillMap.get(slot.skillId) : undefined;
           const onCd = slot.cooldownRemaining > 0;
+          const pressable = !!skill && !onCd;
           return (
-            <View key={key} style={[styles.slotBox, onCd && styles.slotOnCd, !skill && styles.slotEmpty]}>
-              <Text style={styles.slotText} numberOfLines={1}>{skill ? skill.nome : ''}</Text>
+            <TouchableOpacity
+              key={key}
+              style={[styles.slotBox, onCd && styles.slotOnCd, !skill && styles.slotEmpty]}
+              onPress={pressable ? () => { setSkillModalSlot(slot); setSkillModalSkill(skill!); } : undefined}
+              activeOpacity={pressable ? 0.7 : 1}
+              disabled={!pressable}
+            >
+              <Text style={styles.slotText}>{skill ? skill.nome : ''}</Text>
               {onCd && <Text style={styles.slotCdBadge}>{slot.cooldownRemaining}t</Text>}
-            </View>
+            </TouchableOpacity>
           );
         }
 
@@ -523,34 +526,34 @@ export function GeralScreen() {
       <Modal visible={!!desvioResult} transparent animationType="fade" onRequestClose={() => setDesvioResult(null)}>
         <TouchableOpacity style={detailStyles.backdrop} activeOpacity={1} onPress={() => setDesvioResult(null)}>
           {desvioResult && (
-            <View style={[desvioStyles.card, { borderColor: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
-              <View style={[desvioStyles.bar, { backgroundColor: desvioResult.success ? Colors.tealBright : Colors.danger }]} />
-              <View style={desvioStyles.body}>
-                <Text style={[desvioStyles.verdict, { color: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
+            <View style={[desvioResultStyles.card, { borderColor: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
+              <View style={[desvioResultStyles.bar, { backgroundColor: desvioResult.success ? Colors.tealBright : Colors.danger }]} />
+              <View style={desvioResultStyles.body}>
+                <Text style={[desvioResultStyles.verdict, { color: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
                   {desvioResult.success ? 'DESVIOU' : 'FALHOU'}
                 </Text>
-                <Text style={desvioStyles.rollLine}>
+                <Text style={desvioResultStyles.rollLine}>
                   {desvioResult.weight === 'medium' ? '1d20 desvantagem' : desvioResult.weight === 'none' ? `1d20 + AGI` : '1d20'}
                 </Text>
-                <View style={desvioStyles.totalRow}>
-                  <Text style={desvioStyles.rollNum}>{desvioResult.roll}</Text>
+                <View style={desvioResultStyles.totalRow}>
+                  <Text style={desvioResultStyles.rollNum}>{desvioResult.roll}</Text>
                   {desvioResult.bonus !== 0 && (
-                    <Text style={desvioStyles.bonusNum}>{desvioResult.bonus >= 0 ? `+${desvioResult.bonus}` : desvioResult.bonus}</Text>
+                    <Text style={desvioResultStyles.bonusNum}>{desvioResult.bonus >= 0 ? `+${desvioResult.bonus}` : desvioResult.bonus}</Text>
                   )}
-                  <Text style={desvioStyles.equals}>=</Text>
-                  <Text style={[desvioStyles.total, { color: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
+                  <Text style={desvioResultStyles.equals}>=</Text>
+                  <Text style={[desvioResultStyles.total, { color: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
                     {desvioResult.total}
                   </Text>
-                  <Text style={desvioStyles.cdLabel}>vs CD 12</Text>
+                  <Text style={desvioResultStyles.cdLabel}>vs CD 12</Text>
                 </View>
-                <View style={desvioStyles.usesRow}>
+                <View style={desvioResultStyles.usesRow}>
                   {[0,1,2].map((i) => (
                     <View key={i} style={[
-                      desvioStyles.useDot,
-                      i < (player.desviosRestantes) ? desvioStyles.useDotFull : desvioStyles.useDotEmpty,
+                      desvioResultStyles.useDot,
+                      i < (player.desviosRestantes) ? desvioResultStyles.useDotFull : desvioResultStyles.useDotEmpty,
                     ]} />
                   ))}
-                  <Text style={desvioStyles.usesLabel}>{player.desviosRestantes} restante{player.desviosRestantes !== 1 ? 's' : ''}</Text>
+                  <Text style={desvioResultStyles.usesLabel}>{player.desviosRestantes} restante{player.desviosRestantes !== 1 ? 's' : ''}</Text>
                 </View>
               </View>
             </View>
@@ -558,7 +561,75 @@ export function GeralScreen() {
         </TouchableOpacity>
       </Modal>
 
+      {/* ── Modal de desvio ── */}
+      <Modal visible={desvioModalOpen} transparent animationType="fade" onRequestClose={() => setDesvioModalOpen(false)}>
+        <View style={desvioStyles.overlay}>
+          <View style={desvioStyles.card}>
+            <Text style={desvioStyles.title}>DESVIO</Text>
+
+            <Text style={desvioStyles.hint}>
+              {armorWeight === 'none' && `1d20 + AGI ${formatMod(getModifier(player.attributes.agility))} vs 12`}
+              {armorWeight === 'light' && '1d20 vs 12 (sem bônus)'}
+              {armorWeight === 'medium' && '1d20 com desvantagem vs 12 — insira o menor dos dois dados'}
+            </Text>
+
+            <TextInput
+              style={desvioStyles.input}
+              value={desvioInput}
+              onChangeText={setDesvioInput}
+              keyboardType="numeric"
+              placeholder="Valor do dado"
+              placeholderTextColor={Colors.border}
+              maxLength={2}
+              autoFocus
+            />
+
+            {desvioInput !== '' && !isNaN(parseInt(desvioInput)) && (
+              <View style={desvioStyles.previewRow}>
+                <Text style={desvioStyles.previewText}>
+                  {desvioInput}
+                  {armorWeight === 'none' && ` ${formatMod(getModifier(player.attributes.agility))}`}
+                  {' = '}
+                  <Text style={{
+                    color: (parseInt(desvioInput) + (armorWeight === 'none' ? getModifier(player.attributes.agility) : 0)) >= 12
+                      ? Colors.tealBright : Colors.danger,
+                  }}>
+                    {parseInt(desvioInput) + (armorWeight === 'none' ? getModifier(player.attributes.agility) : 0)}
+                  </Text>
+                  {' vs 12'}
+                </Text>
+              </View>
+            )}
+
+            <View style={desvioStyles.actions}>
+              <TouchableOpacity style={desvioStyles.cancelBtn} onPress={() => { setDesvioModalOpen(false); setDesvioInput(''); }}>
+                <Text style={desvioStyles.cancelText}>CANCELAR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[desvioStyles.confirmBtn, (desvioLoading || !desvioInput) && desvioStyles.confirmDisabled]}
+                onPress={confirmDesvio}
+                disabled={desvioLoading || !desvioInput}
+              >
+                {desvioLoading
+                  ? <ActivityIndicator size="small" color={Colors.text} />
+                  : <Text style={desvioStyles.confirmText}>CONFIRMAR</Text>
+                }
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <SobrecargaModal visible={sobrecargaOpen} onClose={() => setSobrecargaOpen(false)} />
+
+      <SkillInfoModal
+        visible={!!(skillModalSlot && skillModalSkill)}
+        skill={skillModalSkill}
+        slots={player.slots}
+        activeSlot={skillModalSlot}
+        onClose={() => { setSkillModalSlot(null); setSkillModalSkill(null); }}
+        onEquipPress={() => {}}
+      />
     </View>
   );
 }
@@ -717,13 +788,14 @@ const styles = StyleSheet.create({
   slotBox: {
     flex: 1,
     minWidth: 60,
-    height: 40,
+    minHeight: 40,
     borderWidth: 1,
     borderColor: Colors.ember,
     borderRadius: 3,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
     backgroundColor: Colors.emberDim,
   },
   slotEmpty: {
@@ -1022,6 +1094,29 @@ const styles = StyleSheet.create({
   },
 });
 
+const desvioStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
+  card: {
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.ember,
+    borderRadius: 4, padding: 24, width: 320, gap: 14,
+  },
+  title:   { fontFamily: Fonts.title, fontSize: 16, color: Colors.text, letterSpacing: 3, textAlign: 'center' },
+  hint:    { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, textAlign: 'center', fontStyle: 'italic' },
+  input: {
+    height: 56, borderWidth: 1, borderColor: Colors.ember, borderRadius: 3,
+    backgroundColor: Colors.surface, fontFamily: Fonts.title, fontSize: 28,
+    color: Colors.ember, textAlign: 'center',
+  },
+  previewRow:  { alignItems: 'center' },
+  previewText: { fontFamily: Fonts.title, fontSize: 16, color: Colors.text },
+  actions:    { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  cancelBtn:  { paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 2 },
+  cancelText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 2 },
+  confirmBtn: { flex: 1, paddingVertical: 10, backgroundColor: Colors.ember, borderRadius: 2, alignItems: 'center' },
+  confirmDisabled: { opacity: 0.5 },
+  confirmText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.text, letterSpacing: 2 },
+});
+
 const detailStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
@@ -1122,7 +1217,7 @@ const detailStyles = StyleSheet.create({
   },
 });
 
-const desvioStyles = StyleSheet.create({
+const desvioResultStyles = StyleSheet.create({
   card: {
     backgroundColor: Colors.card,
     borderWidth: 1,

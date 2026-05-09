@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { usePlayerStore } from '@/store/playerStore';
-import { unlockSkill, chooseMasteryPath } from '@/lib/api';
+import { unlockSkill, chooseMasteryPath, getSkillTree } from '@/lib/api';
 import type { SkillTreeEntry, Slot } from '@/types';
 
 const MASTERY_USES = [0, 3, 8, 16, 28];
@@ -118,8 +118,8 @@ interface Props {
 }
 
 export function SkillTreeModal({ visible, skillTree, slots, onClose }: Props) {
-  const playerId = usePlayerStore((s) => s.player?.id);
-  const expAvailable = usePlayerStore((s) => s.player?.exp.available ?? 0);
+  const playerId    = usePlayerStore((s) => s.player?.id);
+  const setSkillTree = usePlayerStore((s) => s.setSkillTree);
   const [unlocking, setUnlocking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -144,8 +144,11 @@ export function SkillTreeModal({ visible, skillTree, slots, onClose }: Props) {
     setError(null);
     try {
       await unlockSkill(playerId, skill.skillId);
-    } catch {
-      setError(`Não foi possível desbloquear ${skill.nome}.`);
+      const updated = await getSkillTree(playerId);
+      setSkillTree(updated);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.response?.data ?? err?.message;
+      setError(typeof msg === 'string' ? msg : `Não foi possível desbloquear ${skill.nome}.`);
     } finally {
       setUnlocking(null);
     }
@@ -210,7 +213,7 @@ export function SkillTreeModal({ visible, skillTree, slots, onClose }: Props) {
                       <MaestrySection maestria={skill.maestria} playerId={playerId!} skillId={skill.skillId} />
                     )}
                   </View>
-                  {status === 'locked' && expAvailable > 0 && (
+                  {status === 'locked' && !skill.requirementsText && (
                     <TouchableOpacity
                       style={[styles.unlockBtn, unlocking === skill.skillId && styles.btnDisabled]}
                       onPress={() => handleUnlock(skill)}
