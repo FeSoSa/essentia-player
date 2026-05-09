@@ -73,6 +73,19 @@ export function computeMaestriaEffects(choices: Array<'aumento' | 'otimizacao'>)
   };
 }
 
+const ATTR_ABBREV: Record<string, string> = {
+  strength: 'FOR', agility: 'AGI', intelligence: 'INT',
+  resistance: 'RES', flow: 'FLX', wisdom: 'SAB', presence: 'PRE', defense: 'DEF',
+};
+
+export function weaponDamageFormula(w: { damageBase?: number; damageDice?: { quantity: number; die: string }; damageAttribute?: string }): string {
+  const parts: string[] = [];
+  if (w.damageBase) parts.push(String(w.damageBase));
+  if (w.damageDice) parts.push(`${w.damageDice.quantity}${w.damageDice.die}`);
+  if (w.damageAttribute) parts.push(ATTR_ABBREV[w.damageAttribute] ?? w.damageAttribute.slice(0, 3).toUpperCase());
+  return parts.join(' + ') || '—';
+}
+
 export function getArmorWeight(armorType?: string): ArmorWeight {
   if (!armorType) return 'none';
   const t = armorType.toLowerCase();

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, TextInput, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
-import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, type ArmorWeight } from '@/lib/rules';
+import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, weaponDamageFormula, type ArmorWeight } from '@/lib/rules';
 import { ResourceBar } from '@/components/ui/resource-bar';
 import { SobrecargaModal } from '@/components/ui/sobrecarga-modal';
 import { SkillInfoModal } from '@/components/ui/skill-info-modal';
@@ -155,7 +155,7 @@ export function GeralScreen() {
         </View>
 
         {/* Conteúdo com padding */}
-        <View style={styles.leftContent}>
+        <ScrollView style={styles.leftScroll} contentContainerStyle={styles.leftContent} showsVerticalScrollIndicator={false}>
           {/* Level + XP */}
           {(() => {
             const { xpInLevel, xpNeeded } = xpProgress(player.exp.total, player.char.level);
@@ -193,7 +193,7 @@ export function GeralScreen() {
             })}
           </View>
 
-        </View>
+        </ScrollView>
       </View>
 
       {/* ─── BARS PANEL ─── */}
@@ -289,6 +289,18 @@ export function GeralScreen() {
               {`1d20 ${initBonus >= 0 ? `+${initBonus}` : initBonus}`}
             </Text>
           </View>
+
+          {(() => {
+            const weapon = player.equipment.mainHand;
+            const dmg = weapon ? weaponDamageFormula(weapon) : (player.char.unarmedDamage ?? '—');
+            const hasData = !!(weapon?.damageDice || weapon?.damageBase || player.char.unarmedDamage);
+            return (
+              <View style={styles.initiativeRow}>
+                <Text style={styles.combatStatLabel}>DANO BASE</Text>
+                <Text style={hasData ? styles.combatStatValue : styles.combatStatMuted}>{dmg}</Text>
+              </View>
+            );
+          })()}
 
           <View style={[styles.faPanel, !fastAction?.active && styles.faPanelInactive]}>
             <Text style={styles.faLabel}>AÇÃO RÁPIDA</Text>
@@ -656,7 +668,7 @@ const styles = StyleSheet.create({
   // Portrait — edge to edge, nome sobreposto
   portraitWrap: {
     width: '100%',
-    height: 88,
+    height: 72,
     backgroundColor: Colors.surface,
     overflow: 'hidden',
   },
@@ -697,8 +709,10 @@ const styles = StyleSheet.create({
   },
 
   // Content below portrait
-  leftContent: {
+  leftScroll: {
     flex: 1,
+  },
+  leftContent: {
     padding: 8,
     gap: 4,
   },
@@ -1036,6 +1050,11 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.title,
     fontSize: 13,
     color: Colors.text,
+  },
+  combatStatMuted: {
+    fontFamily: Fonts.title,
+    fontSize: 13,
+    color: Colors.faint,
   },
   desvioMidSection: {
     width: 72,

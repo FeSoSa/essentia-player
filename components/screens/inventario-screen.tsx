@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Colors, Fonts } from '@/constants/theme';
+import { Colors, Fonts, RARITY_COLORS, RARITY_LABELS, type Rarity } from '@/constants/theme';
 import { ItemModal } from '@/components/ui/item-modal';
+import { resolveIcon } from '@/components/ui/game-icon';
 import { equipItem, unequipItem } from '@/lib/api';
 import { usePlayerStore } from '@/store/playerStore';
-import { getArmorWeight } from '@/lib/rules';
+import { getArmorWeight, weaponDamageFormula } from '@/lib/rules';
 import type { Item, WeaponEquip } from '@/types';
+
+function rarityColor(rarity?: string): string {
+  if (rarity && rarity in RARITY_COLORS) return RARITY_COLORS[rarity as Rarity];
+  return Colors.ember;
+}
 
 const ARMOR_DODGE_NOTE: Record<string, string> = {
   none: 'Sem armadura · Desvio livre +AGI',
@@ -86,9 +92,9 @@ export function InventarioScreen() {
                 activeOpacity={equipped ? 0.7 : 1}
               >
                 <MaterialCommunityIcons
-                  name={(equipped?.icon ?? icon) as any}
+                  name={equipped ? resolveIcon(equipped.icon) : icon as any}
                   size={18}
-                  color={blockedByTwoHanded ? Colors.border : equipped ? Colors.ember : Colors.muted}
+                  color={blockedByTwoHanded ? Colors.border : equipped ? rarityColor((equipped as any).rarity) : Colors.muted}
                   style={{ opacity: equipped ? 1 : 0.4 }}
                 />
                 <View style={styles.equipInfo}>
@@ -98,7 +104,9 @@ export function InventarioScreen() {
                   ) : equipped ? (
                     <>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={styles.equipItemName}>{equipped.name}</Text>
+                        <Text style={[styles.equipItemName, { color: rarityColor((equipped as any).rarity) }]}>
+                          {equipped.name}
+                        </Text>
                         {equipped.twoHanded && (
                           <View style={styles.twoHandBadge}>
                             <Text style={styles.twoHandText}>2H</Text>
@@ -107,12 +115,24 @@ export function InventarioScreen() {
                       </View>
                       {key === 'armor' && (
                         <Text style={styles.textMuted}>
-                          {ARMOR_DODGE_NOTE[getArmorWeight(equipped.type)]}
+                          {ARMOR_DODGE_NOTE[getArmorWeight((equipped as any).armorWeight ?? '')]}
+                        </Text>
+                      )}
+                      {(key === 'mainHand' || key === 'offHand') && (equipped as WeaponEquip).damageDice && (
+                        <Text style={styles.baseDmgText}>
+                          {weaponDamageFormula(equipped as WeaponEquip)}
                         </Text>
                       )}
                     </>
                   ) : (
-                    <Text style={styles.textMuted}>— vazio</Text>
+                    <>
+                      <Text style={styles.textMuted}>— vazio</Text>
+                      {key === 'mainHand' && player.char.unarmedDamage && (
+                        <Text style={styles.baseDmgText}>
+                          desarmado {player.char.unarmedDamage}
+                        </Text>
+                      )}
+                    </>
                   )}
                 </View>
                 {equipped && (
@@ -138,14 +158,14 @@ export function InventarioScreen() {
             {player.items.map((item) => (
               <TouchableOpacity
                 key={item.id}
-                style={styles.gridSlotFilled}
+                style={[styles.gridSlotFilled, { borderColor: rarityColor(item.rarity) }]}
                 onPress={() => setMenu({ item })}
                 activeOpacity={0.7}
               >
                 <MaterialCommunityIcons
-                  name={(item.icon as any) ?? 'cube-outline'}
+                  name={resolveIcon(item.icon)}
                   size={16}
-                  color={Colors.ember}
+                  color={rarityColor(item.rarity)}
                 />
                 <Text style={styles.itemName} numberOfLines={2}>
                   {item.name.slice(0, 12)}
@@ -176,7 +196,7 @@ export function InventarioScreen() {
             >
               <Text style={styles.menuOptionText}>Ver detalhes</Text>
             </TouchableOpacity>
-            {menu.item.equipSlot ? (
+            {(menu.item.equipSlot || menu.item.type === 'weapon' || menu.item.type === 'armor') ? (
               <TouchableOpacity
                 style={styles.menuOption}
                 onPress={() => handleEquip(menu.item)}
@@ -229,6 +249,7 @@ const styles = StyleSheet.create({
   equipLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 1 },
   equipItemName: { fontFamily: Fonts.body, fontSize: 13, color: Colors.text },
   textMuted: { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, fontStyle: 'italic' },
+  baseDmgText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.gold, letterSpacing: 0.5 },
   inventCol: { flex: 1, padding: 12 },
   inventHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   ouroBadge: {

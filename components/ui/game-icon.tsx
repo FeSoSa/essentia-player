@@ -3,7 +3,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 
 // Maps Lucide icon names (used by essentia-mestre) → MaterialCommunityIcons names
-const LUCIDE_TO_MCI: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
+export const LUCIDE_TO_MCI: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
   Sword:             'sword',
   Shield:            'shield',
   Axe:               'axe',
@@ -38,6 +38,11 @@ const LUCIDE_TO_MCI: Record<string, keyof typeof MaterialCommunityIcons.glyphMap
   Dices:             'dice-multiple',
   Leaf:              'leaf',
 };
+
+export function resolveIcon(icon?: string | null): keyof typeof MaterialCommunityIcons.glyphMap {
+  if (!icon || icon.startsWith('img:')) return 'cube-outline';
+  return LUCIDE_TO_MCI[icon] ?? 'cube-outline';
+}
 
 interface Props {
   icon?: string | null;

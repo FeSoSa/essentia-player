@@ -39,6 +39,7 @@ export interface CharInfo {
   slotsFree: number;
   slotsTotal: number;
   portraitUrl?: string;
+  unarmedDamage?: string;
 }
 
 export interface Slot {
@@ -57,7 +58,18 @@ export interface Item {
   icon?: string;
   equipSlot?: string;
   twoHanded?: boolean;
+  // Weapon
+  weaponType?: string;
+  damageBase?: number;
+  damageDice?: { quantity: number; die: string };
+  damageAttribute?: string;
+  properties?: string;
+  // Armor
+  damageReduction?: number;
   armorWeight?: string;
+  // Shared
+  attributeBonus?: Record<string, number>;
+  rarity?: string;
 }
 
 export interface DamageResult {
@@ -73,6 +85,10 @@ export interface WeaponEquip {
   type: string;
   icon?: string;
   twoHanded?: boolean;
+  rarity?: string;
+  damageBase?: number;
+  damageDice?: { quantity: number; die: string };
+  damageAttribute?: string;
 }
 
 export interface ArmorEquip {
@@ -81,12 +97,14 @@ export interface ArmorEquip {
   damageReduction?: number;
   attributeBonus?: Record<string, number>;
   armorWeight?: string;
+  rarity?: string;
 }
 
 export interface AccessoryEquip {
   id: string;
   name: string;
   attributeBonus?: Record<string, number>;
+  rarity?: string;
 }
 
 export interface Equipment {
