@@ -56,7 +56,7 @@ export default function IndexScreen() {
       router.replace('/game');
     } catch (err: any) {
       if (err?.code === 'ERR_NETWORK' || err?.message?.includes('Network Error')) {
-        setError(`Servidor inacessível em ${serverIp.trim()}:8080. Verifique o IP.`);
+        setError(`Servidor inacessível em ${serverIp.trim()}. Verifique o endereço.`);
       } else if (err?.response?.status === 401 || err?.response?.status === 404) {
         setError('Código inválido. Verifique o código do personagem.');
       } else {
@@ -116,7 +116,9 @@ export default function IndexScreen() {
               placeholderTextColor={Colors.faint}
               value={serverIp}
               onChangeText={setServerIpState}
-              keyboardType="decimal-pad"
+              keyboardType="url"
+              autoCapitalize="none"
+              autoCorrect={false}
               returnKeyType="done"
               onSubmitEditing={handleLogin}
             />
