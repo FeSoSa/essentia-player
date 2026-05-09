@@ -52,36 +52,36 @@ export function ResourceBar({ label, current, max, color, onIncrement, onDecreme
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 10,
+    // sem marginBottom — barWrap usa flex
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   label: {
     fontFamily: Fonts.title,
-    fontSize: 11,
+    fontSize: 9,
     color: Colors.muted,
     letterSpacing: 2,
   },
   value: {
     fontFamily: Fonts.title,
-    fontSize: 20,
+    fontSize: 16,
     color: Colors.text,
   },
   maxVal: {
     fontFamily: Fonts.body,
-    fontSize: 13,
+    fontSize: 11,
     color: Colors.muted,
   },
   track: {
-    height: 12,
+    height: 8,
     backgroundColor: Colors.surface,
     borderRadius: 3,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: 5,
   },
   fill: {
     height: '100%',
@@ -89,11 +89,11 @@ const styles = StyleSheet.create({
   },
   controls: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 5,
   },
   btn: {
     flex: 1,
-    height: 28,
+    height: 24,
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 3,
@@ -105,8 +105,8 @@ const styles = StyleSheet.create({
   },
   btnText: {
     fontFamily: Fonts.title,
-    fontSize: 18,
+    fontSize: 16,
     color: Colors.muted,
-    lineHeight: 22,
+    lineHeight: 20,
   },
 });

@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
+import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
+import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, type ArmorWeight } from '@/lib/rules';
 import { ResourceBar } from '@/components/ui/resource-bar';
-import { EssenciasPopup } from '@/components/ui/essencias-popup';
-import { EfeitosPopup } from '@/components/ui/efeitos-popup';
+import { SobrecargaModal } from '@/components/ui/sobrecarga-modal';
+import { GameIcon } from '@/components/ui/game-icon';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
-import { adjustHp, adjustFlow, adjustEther, voteFastAction } from '@/lib/api';
+import { adjustHp, adjustFlow, adjustEther, adjustPressao, voteFastAction, executeDesvio } from '@/lib/api';
+import { SOBRECARGA_LEVELS, type Essencia, type EssenciaObtida, type StatusEffect } from '@/types';
 
 const ATTR_LABELS: Record<string, string> = {
   strength: 'FOR',
@@ -22,8 +24,7 @@ const ATTR_LABELS: Record<string, string> = {
 const ATTR_ORDER = ['strength', 'agility', 'intelligence', 'resistance', 'flow', 'wisdom', 'presence', 'defense'];
 
 function bonus(val: number): string {
-  const b = Math.floor(val / 10);
-  return b > 0 ? `+${b}` : b === 0 ? '+0' : `${b}`;
+  return formatMod(getModifier(val));
 }
 
 function hpColor(current: number, max: number): string {
@@ -42,7 +43,8 @@ function normalizePortraitUrl(url: string): string {
   return fileId ? `https://drive.google.com/uc?export=view&id=${fileId}` : url;
 }
 
-function essenciaColor(type: string): string {
+function essenciaColor(type: string, customColor?: string): string {
+  if (customColor) return customColor;
   switch (type) {
     case 'Grande': return Colors.gold;
     case 'Mitica': return '#a855f7';
@@ -53,15 +55,25 @@ function essenciaColor(type: string): string {
 
 export function GeralScreen() {
   const player = usePlayerStore((s) => s.player)!;
+  const setPlayer = usePlayerStore((s) => s.setPlayer);
   const skillTree = usePlayerStore((s) => s.skillTree);
   const essencias = usePlayerStore((s) => s.essencias);
   const initiative = useGameStore((s) => s.initiative);
+  const collectiveBars = useGameStore((s) => s.collectiveBars);
   const turnCount = useGameStore((s) => s.turnCount);
   const fastAction = useGameStore((s) => s.fastAction);
 
-  const [essenciasOpen, setEssenciasOpen] = useState(false);
-  const [efeitosOpen, setEfeitosOpen] = useState(false);
+  const [selectedEssencia, setSelectedEssencia] = useState<(EssenciaObtida & { catalog?: Essencia }) | null>(null);
+  const [selectedEfeito, setSelectedEfeito] = useState<StatusEffect | null>(null);
+  const [sobrecargaOpen, setSobrecargaOpen] = useState(false);
   const [faLoading, setFaLoading] = useState(false);
+  const [desvioLoading, setDesvioLoading] = useState(false);
+  const [desvioResult, setDesvioResult] = useState<{ roll: number; bonus: number; total: number; success: boolean; weight: ArmorWeight } | null>(null);
+
+  const sobrecargaAtiva = player.sobrecargaAtiva === true;
+  const sobrecargaBonus = sobrecargaAtiva
+    ? (SOBRECARGA_LEVELS.find((l) => l.nivel === player.sobrecargaNivel)?.bonus ?? 0)
+    : 0;
 
   const enemies = useGameStore((s) => s.enemies);
   const bosses = useGameStore((s) => s.bosses);
@@ -69,6 +81,36 @@ export function GeralScreen() {
   const skillMap = new Map(skillTree.map((s) => [s.skillId, s]));
   const combatActive = enemies.length > 0 || bosses.length > 0 || initiative.length > 0;
   const currentPlayer = initiative.length > 0 ? initiative[turnCount % initiative.length] : null;
+
+  const agiMod = getModifier(player.attributes.agility);
+  const initBonus = initiativeBonus(agiMod);
+  const armorWeight = getArmorWeight(player.equipment.armor?.armorWeight);
+  const canDesviar = combatActive && armorWeight !== 'heavy' && player.desviosRestantes > 0;
+
+  async function handleDesvio() {
+    if (!canDesviar || desvioLoading) return;
+    setDesvioLoading(true);
+    try {
+      // Roll dice according to armor type
+      const roll1 = Math.ceil(Math.random() * 20);
+      let roll: number;
+      let bonus = 0;
+      if (armorWeight === 'none') {
+        roll = roll1;
+        bonus = getModifier(player.attributes.agility);
+      } else if (armorWeight === 'medium') {
+        const roll2 = Math.ceil(Math.random() * 20);
+        roll = Math.min(roll1, roll2); // disadvantage
+      } else {
+        roll = roll1; // light: no bonus
+      }
+      const total = roll + bonus;
+      const updated = await executeDesvio(player.id);
+      setPlayer(updated);
+      setDesvioResult({ roll, bonus, total, success: total >= 12, weight: armorWeight });
+    } catch { /* silent */ }
+    finally { setDesvioLoading(false); }
+  }
 
   const faVoted = (fastAction?.lockedPlayers ?? []).includes(player.id);
   const faTakenOptions = new Set(Object.values(fastAction?.answers ?? {}));
@@ -111,8 +153,7 @@ export function GeralScreen() {
           <View style={styles.portraitOverlay}>
             <Text style={styles.charName}>{player.char.name}</Text>
             <Text style={styles.charSub}>
-              {player.char.race} · {player.char.skillClass}
-              {player.char.subClass ? ` · ${player.char.subClass}` : ''}
+              {player.char.race} · {player.char.classe}
             </Text>
           </View>
         </View>
@@ -121,20 +162,19 @@ export function GeralScreen() {
         <View style={styles.leftContent}>
           {/* Level + XP */}
           {(() => {
-            const xpPerLevel = 100;
-            const xpInLevel = player.exp.total % xpPerLevel;
-            const fillPct = (xpInLevel / xpPerLevel) * 100;
+            const { xpInLevel, xpNeeded } = xpProgress(player.exp.total, player.char.level);
+            const fillPct = xpNeeded > 0 ? Math.min((xpInLevel / xpNeeded) * 100, 100) : 100;
             return (
               <>
                 <View style={styles.levelRow}>
                   <Text style={styles.levelLabel}>NÍVEL {player.char.level}</Text>
-                  <Text style={styles.xpText}>{xpInLevel} / {xpPerLevel} XP</Text>
+                  <Text style={styles.xpText}>{xpInLevel} / {xpNeeded} XP</Text>
                 </View>
                 <View style={styles.xpTrack}>
                   <View style={[styles.xpFill, { width: `${fillPct}%` as any }]} />
                 </View>
                 {player.exp.available > 0 && (
-                  <Text style={styles.ptsAmber}>{player.exp.available} pts disponíveis</Text>
+                  <Text style={styles.ptsAmber}>{player.exp.available} pontos de atributo</Text>
                 )}
               </>
             );
@@ -143,12 +183,15 @@ export function GeralScreen() {
           {/* Attributes grid */}
           <View style={styles.attrGrid}>
             {ATTR_ORDER.map((key) => {
-              const val = (player.attributes as any)[key] as number;
+              const base = (player.attributes as any)[key] as number;
+              const displayed = base + sobrecargaBonus;
               return (
-                <View key={key} style={styles.attrCell}>
+                <View key={key} style={[styles.attrCell, sobrecargaAtiva && key !== 'defense' && styles.attrCellOverload]}>
                   <Text style={styles.attrLabel}>{ATTR_LABELS[key]}</Text>
-                  <Text style={styles.attrVal}>{val}</Text>
-                  <Text style={styles.attrBonus}>{bonus(val)}</Text>
+                  <Text style={[styles.attrVal, sobrecargaAtiva && key !== 'defense' && styles.attrValOverload]}>
+                    {displayed}
+                  </Text>
+                  <Text style={styles.attrBonus}>{bonus(displayed)}</Text>
                 </View>
               );
             })}
@@ -158,7 +201,7 @@ export function GeralScreen() {
       </View>
 
       {/* ─── BARS PANEL ─── */}
-      <View style={styles.barsPanel}>
+      <ScrollView style={styles.barsPanel} contentContainerStyle={styles.barsPanelContent} showsVerticalScrollIndicator={false}>
         <ResourceBar
           label="VIDA"
           current={player.hp.current}
@@ -185,78 +228,103 @@ export function GeralScreen() {
             onIncrement={() => adjustEther(player.id, 1)}
           />
         )}
-      </View>
+        {player.char.classe === 'Intenso' && player.pressao && (
+          <ResourceBar
+            label="PRESSÃO"
+            current={player.pressao.current}
+            max={player.pressao.max}
+            color="#f97316"
+            onDecrement={() => adjustPressao(player.id, -1)}
+            onIncrement={() => adjustPressao(player.id, 1)}
+          />
+        )}
+        {(player.customBars ?? []).map((bar) => (
+          <ResourceBar key={bar.id} label={bar.name.toUpperCase()} current={bar.current} max={bar.max} color={bar.color} />
+        ))}
+        {collectiveBars.map((bar) => (
+          <ResourceBar key={bar.id} label={bar.name.toUpperCase()} current={bar.current} max={bar.max} color={bar.color} />
+        ))}
+      </ScrollView>
 
       {/* ─── COMBAT PANEL ─── */}
       <View style={styles.combatPanel}>
-        <View style={combatActive ? styles.combatBadge : styles.combatBadgeInactive}>
-          <Text style={[styles.combatBadgeText, !combatActive && styles.combatBadgeTextMuted]}>
-            {combatActive ? 'COMBATE ATIVO' : 'SEM COMBATE'}
-          </Text>
-        </View>
-
-        {/* Inimigos e bosses ativos */}
-        {(enemies.length > 0 || bosses.length > 0) && (
-          <View style={styles.entityList}>
-            {enemies.map((e) => (
-              <View key={e.instanceId} style={styles.entityRow}>
-                <Text style={styles.entityIcon}>{e.icon || '⚔'}</Text>
-                <Text style={styles.entityName} numberOfLines={1}>{e.name}</Text>
-                <View style={[styles.entityHpDot, { backgroundColor: hpColor(e.hpCurrent, e.hpMax) }]} />
-              </View>
-            ))}
-            {bosses.map((b) => {
-              const phase = b.phases[b.currentPhase];
-              return (
-                <View key={b.instanceId} style={styles.entityRow}>
-                  <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
-                  <Text style={styles.entityName} numberOfLines={1}>{b.name}</Text>
-                  <View style={[styles.entityHpDot, { backgroundColor: hpColor(b.hpCurrent, phase?.hpMax ?? 1) }]} />
-                </View>
-              );
-            })}
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.combatScroll}>
+          <View style={combatActive ? styles.combatBadge : styles.combatBadgeInactive}>
+            <Text style={[styles.combatBadgeText, !combatActive && styles.combatBadgeTextMuted]}>
+              {combatActive ? 'COMBATE ATIVO' : 'SEM COMBATE'}
+            </Text>
           </View>
-        )}
 
-        <View style={styles.roundPill}>
-          <Text style={styles.roundText}>
-            {combatActive ? `ROUND ${turnCount + 1}` : 'ROUND —'}
-          </Text>
-        </View>
-        <Text style={[styles.turnText, !combatActive && styles.turnTextMuted]}>
-          {combatActive && currentPlayer ? `${currentPlayer.name} está jogando` : '—'}
-        </Text>
-
-        <View style={[styles.faPanel, !fastAction?.active && styles.faPanelInactive]}>
-          <Text style={styles.faLabel}>AÇÃO RÁPIDA</Text>
-          {fastAction?.active ? (
-            <>
-              <Text style={styles.faTitle}>{fastAction.title}</Text>
-              {faVoted ? (
-                <Text style={styles.faVoted}>Voto registrado</Text>
-              ) : (
-                <View style={styles.faOptions}>
-                  {fastAction.options.map((opt) => {
-                    const taken = faTakenOptions.has(opt.id);
-                    return (
-                      <TouchableOpacity
-                        key={opt.id}
-                        style={[styles.faCircle, { backgroundColor: opt.color }, taken && { opacity: 0.3 }]}
-                        onPress={() => handleVote(opt.id)}
-                        disabled={faLoading || taken}
-                        activeOpacity={0.75}
-                      >
-                        {faLoading && !taken && <ActivityIndicator color="#fff" size="small" />}
-                      </TouchableOpacity>
-                    );
-                  })}
+          {/* Inimigos e bosses ativos */}
+          {(enemies.length > 0 || bosses.length > 0) && (
+            <View style={styles.entityList}>
+              {enemies.map((e) => (
+                <View key={e.instanceId} style={styles.entityRow}>
+                  <Text style={styles.entityIcon}>{e.icon || '⚔'}</Text>
+                  <Text style={styles.entityName} numberOfLines={1}>{e.name}</Text>
+                  <View style={[styles.entityHpDot, { backgroundColor: hpColor(e.hpCurrent, e.hpMax) }]} />
                 </View>
-              )}
-            </>
-          ) : (
-            <Text style={styles.faInactive}>—</Text>
+              ))}
+              {bosses.map((b) => {
+                const phase = b.phases[b.currentPhase];
+                return (
+                  <View key={b.instanceId} style={styles.entityRow}>
+                    <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
+                    <Text style={styles.entityName} numberOfLines={1}>{b.name}</Text>
+                    <View style={[styles.entityHpDot, { backgroundColor: hpColor(b.hpCurrent, phase?.hpMax ?? 1) }]} />
+                  </View>
+                );
+              })}
+            </View>
           )}
-        </View>
+
+          <View style={styles.roundPill}>
+            <Text style={styles.roundText}>
+              {combatActive ? `ROUND ${turnCount + 1}` : 'ROUND —'}
+            </Text>
+          </View>
+          <Text style={[styles.turnText, !combatActive && styles.turnTextMuted]}>
+            {combatActive && currentPlayer ? `${currentPlayer.name} está jogando` : '—'}
+          </Text>
+
+          <View style={styles.initiativeRow}>
+            <Text style={styles.combatStatLabel}>INICIATIVA</Text>
+            <Text style={styles.combatStatValue}>
+              {`1d20 ${initBonus >= 0 ? `+${initBonus}` : initBonus}`}
+            </Text>
+          </View>
+
+          <View style={[styles.faPanel, !fastAction?.active && styles.faPanelInactive]}>
+            <Text style={styles.faLabel}>AÇÃO RÁPIDA</Text>
+            {fastAction?.active ? (
+              <>
+                <Text style={styles.faTitle}>{fastAction.title}</Text>
+                {faVoted ? (
+                  <Text style={styles.faVoted}>Voto registrado</Text>
+                ) : (
+                  <View style={styles.faOptions}>
+                    {fastAction.options.map((opt) => {
+                      const taken = faTakenOptions.has(opt.id);
+                      return (
+                        <TouchableOpacity
+                          key={opt.id}
+                          style={[styles.faCircle, { backgroundColor: opt.color }, taken && { opacity: 0.3 }]}
+                          onPress={() => handleVote(opt.id)}
+                          disabled={faLoading || taken}
+                          activeOpacity={0.75}
+                        >
+                          {faLoading && !taken && <ActivityIndicator color="#fff" size="small" />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
+            ) : (
+              <Text style={styles.faInactive}>—</Text>
+            )}
+          </View>
+        </ScrollView>
       </View>
 
       </View>{/* end topRow */}
@@ -271,38 +339,77 @@ export function GeralScreen() {
 
         return (
           <View style={styles.middleRow}>
-            <TouchableOpacity style={styles.midSection} onPress={() => setEssenciasOpen(true)} activeOpacity={0.85}>
+            <View style={styles.midSection}>
               <Text style={styles.midLabel}>ESSÊNCIAS</Text>
               <View style={styles.midGrid}>
                 {Array.from({ length: Math.max(obtidas.length, 5) }, (_, i) => {
                   const o = obtidas[i];
                   if (!o) return <View key={i} style={[styles.midSlot, styles.midSlotEmpty]} />;
-                  const color = essenciaColor(o.catalog?.type ?? '');
+                  const color = essenciaColor(o.catalog?.type ?? '', o.catalog?.color);
                   return (
-                    <View key={o.essenciaId} style={styles.midSlot}>
-                      <View style={[styles.midDot, { backgroundColor: color }]} />
+                    <TouchableOpacity key={o.essenciaId} style={[styles.midSlot, { borderColor: color + '88' }]} onPress={() => setSelectedEssencia(o)} activeOpacity={0.7}>
+                      {o.catalog?.icon
+                        ? <GameIcon icon={o.catalog.icon} size={11} color={color} />
+                        : <View style={[styles.midDot, { backgroundColor: color }]} />
+                      }
                       <Text style={styles.midSlotText} numberOfLines={1}>{o.catalog?.name ?? '?'}</Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
-            </TouchableOpacity>
+            </View>
             <View style={styles.midDivider} />
-            <TouchableOpacity style={styles.midSection} onPress={() => setEfeitosOpen(true)} activeOpacity={0.85}>
+            <View style={styles.midSection}>
               <Text style={styles.midLabel}>EFEITOS</Text>
               <View style={styles.midGrid}>
                 {Array.from({ length: Math.max(effects.length, 5) }, (_, i) => {
                   const ef = effects[i];
                   if (!ef) return <View key={i} style={[styles.midSlot, styles.midSlotEmpty]} />;
                   return (
-                    <View key={ef.id} style={styles.midSlot}>
-                      {ef.icon ? <Text style={styles.midIcon}>{ef.icon}</Text> : null}
+                    <TouchableOpacity key={ef.id}
+                      style={[styles.midSlot, ef.color ? { borderColor: ef.color + '88' } : undefined]}
+                      onPress={() => setSelectedEfeito(ef)} activeOpacity={0.7}>
+                      <GameIcon icon={ef.icon} size={12} color={ef.color || Colors.muted} />
                       <Text style={styles.midSlotText} numberOfLines={1}>{ef.name}</Text>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
+            </View>
+            <View style={styles.midDivider} />
+            <TouchableOpacity
+              style={[styles.desvioMidSection, !canDesviar && styles.desvioMidDisabled]}
+              onPress={handleDesvio}
+              disabled={!canDesviar || desvioLoading}
+              activeOpacity={0.75}
+            >
+              <View style={styles.desvioDotsRow}>
+                {[0, 1, 2].map((i) => (
+                  <View key={i} style={[
+                    styles.desvioDot,
+                    i < player.desviosRestantes ? styles.desvioDotFull : styles.desvioDotEmpty,
+                  ]} />
+                ))}
+              </View>
+              <Text style={styles.desvioMidLabel}>DESVIAR</Text>
             </TouchableOpacity>
+            {player.sobrecargaDesbloqueada && (
+              <>
+                <View style={styles.midDivider} />
+                <TouchableOpacity
+                  style={[styles.sobrecargaMidSection, sobrecargaAtiva && styles.sobrecargaMidAtiva]}
+                  onPress={() => setSobrecargaOpen(true)}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.sobrecargaMidLabel, sobrecargaAtiva && styles.sobrecargaMidLabelAtiva]}>
+                    {sobrecargaAtiva ? `N${player.sobrecargaNivel}` : '⚡'}
+                  </Text>
+                  <Text style={[styles.sobrecargaMidSub, sobrecargaAtiva && styles.sobrecargaMidLabelAtiva]}>
+                    {sobrecargaAtiva ? 'ATIVO' : 'SOBREC.'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         );
       })()}
@@ -312,7 +419,7 @@ export function GeralScreen() {
         const classSlots = player.slots.filter((s) => s.type === 'class');
         const bonusSlots = player.slots.filter((s) => s.type !== 'class');
         const classCount = player.char.slotsClass;
-        const bonusCount = 10 - classCount;
+        const bonusCount = player.char.slotsTotal - classCount;
         const classGrid = Array.from({ length: classCount }, (_, i) => classSlots[i] ?? null);
         const bonusGrid = Array.from({ length: bonusCount }, (_, i) => bonusSlots[i] ?? null);
 
@@ -337,8 +444,121 @@ export function GeralScreen() {
         );
       })()}
 
-      <EssenciasPopup visible={essenciasOpen} onClose={() => setEssenciasOpen(false)} />
-      <EfeitosPopup visible={efeitosOpen} onClose={() => setEfeitosOpen(false)} />
+      {/* Detalhe de essência */}
+      <Modal visible={!!selectedEssencia} transparent animationType="fade" onRequestClose={() => setSelectedEssencia(null)}>
+        <TouchableOpacity style={detailStyles.backdrop} activeOpacity={1} onPress={() => setSelectedEssencia(null)}>
+          <View style={detailStyles.card}>
+            {selectedEssencia && (() => {
+              const ess = selectedEssencia.catalog;
+              const color = essenciaColor(ess?.type ?? '', ess?.color);
+              const bonuses = Object.entries(ess?.attributeBonus ?? {}).filter(([, v]) => v !== 0);
+              return (
+                <>
+                  <View style={[detailStyles.colorBar, { backgroundColor: color }]} />
+                  <View style={detailStyles.body}>
+                    <View style={detailStyles.titleRow}>
+                      {ess?.icon && <GameIcon icon={ess.icon} size={18} color={color} />}
+                      <Text style={detailStyles.name}>{ess?.name ?? '?'}</Text>
+                      <Text style={[detailStyles.typeBadge, { color }]}>{ess?.type ?? '—'}</Text>
+                    </View>
+                    {ess?.desc ? <Text style={detailStyles.desc}>{ess.desc}</Text> : <Text style={detailStyles.desc}>—</Text>}
+                    {bonuses.length > 0 && (
+                      <View style={detailStyles.bonusRow}>
+                        {bonuses.map(([attr, val]) => (
+                          <View key={attr} style={detailStyles.bonusPill}>
+                            <Text style={detailStyles.bonusText}>{attr.slice(0,3).toUpperCase()} {val > 0 ? '+' : ''}{val}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    {selectedEssencia.unlockedSkillIds.length > 0 && (
+                      <Text style={detailStyles.skillCount}>
+                        {selectedEssencia.unlockedSkillIds.length} habilidade{selectedEssencia.unlockedSkillIds.length !== 1 ? 's' : ''} desbloqueada{selectedEssencia.unlockedSkillIds.length !== 1 ? 's' : ''}
+                      </Text>
+                    )}
+                    {selectedEssencia.attributeBonusActive && (
+                      <View style={detailStyles.activeBadge}>
+                        <Text style={detailStyles.activeBadgeText}>BÔNUS ATIVO</Text>
+                      </View>
+                    )}
+                  </View>
+                </>
+              );
+            })()}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Detalhe de efeito */}
+      <Modal visible={!!selectedEfeito} transparent animationType="fade" onRequestClose={() => setSelectedEfeito(null)}>
+        <TouchableOpacity style={detailStyles.backdrop} activeOpacity={1} onPress={() => setSelectedEfeito(null)}>
+          <View style={detailStyles.card}>
+            {selectedEfeito && (() => {
+              const accent = selectedEfeito.color || Colors.danger;
+              return (
+                <>
+                  <View style={[detailStyles.colorBar, { backgroundColor: accent }]} />
+                  <View style={detailStyles.body}>
+                    <View style={detailStyles.titleRow}>
+                      <GameIcon icon={selectedEfeito.icon} size={16} color={accent} />
+                      <Text style={detailStyles.name}>{selectedEfeito.name}</Text>
+                      <View style={[detailStyles.durationBadge, { borderColor: accent + '66' }]}>
+                        <Text style={[detailStyles.durationText, { color: accent }]}>
+                          {selectedEfeito.durationTurns === -1 ? '∞' : `${selectedEfeito.durationTurns}t`}
+                        </Text>
+                      </View>
+                    </View>
+                    {selectedEfeito.desc
+                      ? <Text style={detailStyles.desc}>{selectedEfeito.desc}</Text>
+                      : <Text style={detailStyles.desc}>—</Text>}
+                  </View>
+                </>
+              );
+            })()}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Resultado do desvio */}
+      <Modal visible={!!desvioResult} transparent animationType="fade" onRequestClose={() => setDesvioResult(null)}>
+        <TouchableOpacity style={detailStyles.backdrop} activeOpacity={1} onPress={() => setDesvioResult(null)}>
+          {desvioResult && (
+            <View style={[desvioStyles.card, { borderColor: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
+              <View style={[desvioStyles.bar, { backgroundColor: desvioResult.success ? Colors.tealBright : Colors.danger }]} />
+              <View style={desvioStyles.body}>
+                <Text style={[desvioStyles.verdict, { color: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
+                  {desvioResult.success ? 'DESVIOU' : 'FALHOU'}
+                </Text>
+                <Text style={desvioStyles.rollLine}>
+                  {desvioResult.weight === 'medium' ? '1d20 desvantagem' : desvioResult.weight === 'none' ? `1d20 + AGI` : '1d20'}
+                </Text>
+                <View style={desvioStyles.totalRow}>
+                  <Text style={desvioStyles.rollNum}>{desvioResult.roll}</Text>
+                  {desvioResult.bonus !== 0 && (
+                    <Text style={desvioStyles.bonusNum}>{desvioResult.bonus >= 0 ? `+${desvioResult.bonus}` : desvioResult.bonus}</Text>
+                  )}
+                  <Text style={desvioStyles.equals}>=</Text>
+                  <Text style={[desvioStyles.total, { color: desvioResult.success ? Colors.tealBright : Colors.danger }]}>
+                    {desvioResult.total}
+                  </Text>
+                  <Text style={desvioStyles.cdLabel}>vs CD 12</Text>
+                </View>
+                <View style={desvioStyles.usesRow}>
+                  {[0,1,2].map((i) => (
+                    <View key={i} style={[
+                      desvioStyles.useDot,
+                      i < (player.desviosRestantes) ? desvioStyles.useDotFull : desvioStyles.useDotEmpty,
+                    ]} />
+                  ))}
+                  <Text style={desvioStyles.usesLabel}>{player.desviosRestantes} restante{player.desviosRestantes !== 1 ? 's' : ''}</Text>
+                </View>
+              </View>
+            </View>
+          )}
+        </TouchableOpacity>
+      </Modal>
+
+      <SobrecargaModal visible={sobrecargaOpen} onClose={() => setSobrecargaOpen(false)} />
     </View>
   );
 }
@@ -477,6 +697,13 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: Colors.ember,
   },
+  attrCellOverload: {
+    borderColor: '#f97316',
+    borderWidth: 1,
+  },
+  attrValOverload: {
+    color: '#f97316',
+  },
 
   // Slots — faixa horizontal abaixo das colunas
   bottomRow: {
@@ -528,18 +755,23 @@ const styles = StyleSheet.create({
   // ── Bars panel (centro, flex) ──
   barsPanel: {
     flex: 1,
-    padding: 14,
-    gap: 4,
+  },
+  barsPanelContent: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    gap: 2,
     justifyContent: 'center',
   },
 
   // ── Combat panel (direita, largura fixa) ──
   combatPanel: {
     width: 190,
-    padding: 10,
-    gap: 6,
     borderLeftWidth: 1,
     borderLeftColor: Colors.border,
+  },
+  combatScroll: {
+    padding: 10,
+    gap: 6,
   },
 
   combatBadge: {
@@ -706,9 +938,6 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-  midIcon: {
-    fontSize: 10,
-  },
   midSlotText: {
     fontFamily: Fonts.body,
     fontSize: 7,
@@ -718,5 +947,258 @@ const styles = StyleSheet.create({
   midDivider: {
     width: 1,
     backgroundColor: Colors.border,
+  },
+
+  initiativeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  combatStatLabel: {
+    fontFamily: Fonts.title,
+    fontSize: 9,
+    color: Colors.muted,
+    letterSpacing: 2,
+  },
+  combatStatValue: {
+    fontFamily: Fonts.title,
+    fontSize: 13,
+    color: Colors.text,
+  },
+  desvioMidSection: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  desvioMidDisabled: {
+    opacity: 0.35,
+  },
+  desvioMidLabel: {
+    fontFamily: Fonts.title,
+    fontSize: 8,
+    color: Colors.danger,
+    letterSpacing: 1,
+  },
+  desvioDotsRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  desvioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  desvioDotFull: {
+    backgroundColor: Colors.danger,
+  },
+  desvioDotEmpty: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sobrecargaMidSection: {
+    width: 68,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  sobrecargaMidAtiva: {
+    backgroundColor: 'rgba(249,115,22,0.1)',
+  },
+  sobrecargaMidLabel: {
+    fontFamily: Fonts.title,
+    fontSize: 16,
+    color: Colors.muted,
+  },
+  sobrecargaMidLabelAtiva: {
+    color: '#f97316',
+  },
+  sobrecargaMidSub: {
+    fontFamily: Fonts.title,
+    fontSize: 7,
+    color: Colors.muted,
+    letterSpacing: 1,
+  },
+});
+
+const detailStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  card: {
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    width: 280,
+    overflow: 'hidden',
+  },
+  colorBar: {
+    height: 3,
+    width: '100%',
+  },
+  body: {
+    padding: 16,
+    gap: 8,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  name: {
+    fontFamily: Fonts.title,
+    fontSize: 15,
+    color: Colors.text,
+    flex: 1,
+  },
+  typeBadge: {
+    fontFamily: Fonts.title,
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  desc: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.muted,
+    lineHeight: 18,
+  },
+  bonusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  bonusPill: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  bonusText: {
+    fontFamily: Fonts.title,
+    fontSize: 11,
+    color: Colors.text,
+  },
+  skillCount: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.faint,
+  },
+  activeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(163,230,53,0.1)',
+    borderWidth: 1,
+    borderColor: Colors.ember,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  activeBadgeText: {
+    fontFamily: Fonts.title,
+    fontSize: 9,
+    color: Colors.ember,
+    letterSpacing: 1,
+  },
+  durationBadge: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  durationText: {
+    fontFamily: Fonts.title,
+    fontSize: 10,
+    color: Colors.muted,
+    letterSpacing: 1,
+  },
+});
+
+const desvioStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderRadius: 8,
+    width: 260,
+    overflow: 'hidden',
+  },
+  bar: { height: 3 },
+  body: {
+    padding: 20,
+    alignItems: 'center',
+    gap: 10,
+  },
+  verdict: {
+    fontFamily: Fonts.title,
+    fontSize: 22,
+    letterSpacing: 3,
+  },
+  rollLine: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.faint,
+    letterSpacing: 1,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+  },
+  rollNum: {
+    fontFamily: Fonts.title,
+    fontSize: 32,
+    color: Colors.text,
+  },
+  bonusNum: {
+    fontFamily: Fonts.title,
+    fontSize: 18,
+    color: Colors.muted,
+  },
+  equals: {
+    fontFamily: Fonts.title,
+    fontSize: 18,
+    color: Colors.faint,
+  },
+  total: {
+    fontFamily: Fonts.title,
+    fontSize: 32,
+  },
+  cdLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.faint,
+    marginLeft: 4,
+  },
+  usesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 10,
+    width: '100%',
+    justifyContent: 'center',
+  },
+  useDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  useDotFull: { backgroundColor: Colors.danger },
+  useDotEmpty: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border },
+  usesLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    color: Colors.faint,
+    marginLeft: 4,
   },
 });

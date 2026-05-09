@@ -5,10 +5,11 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getImages } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getImages, getCollectiveBars } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
-import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance } from '@/types';
+import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar } from '@/types';
+import { useSobrecargaStore } from '@/store/sobrecargaStore';
 // GameImage used in STOMP handler type annotation below
 
 export default function GameScreen() {
@@ -22,6 +23,8 @@ export default function GameScreen() {
   const incrementTurn = useGameStore((s) => s.incrementTurn);
   const setEnemies = useGameStore((s) => s.setEnemies);
   const setBosses = useGameStore((s) => s.setBosses);
+  const setCollectiveBars = useGameStore((s) => s.setCollectiveBars);
+  const setSobrecargaResult = useSobrecargaStore((s) => s.setResult);
 
   useEffect(() => {
     let mounted = true;
@@ -43,9 +46,20 @@ export default function GameScreen() {
         return;
       }
 
+      async function refreshState() {
+        try {
+          const current = await login(playerCode!);
+          if (mounted) setPlayer(current);
+        } catch {}
+        try {
+          const [essencias, colBars] = await Promise.all([getEssencias(), getCollectiveBars()]);
+          if (mounted) { setEssencias(essencias); setCollectiveBars(colBars); }
+        } catch {}
+      }
+
       let stomp;
       try {
-        stomp = await connectStomp();
+        stomp = await connectStomp(refreshState);
         console.log('[game] STOMP connected, subscribing...');
       } catch (err) {
         console.error('[game] STOMP connection failed:', err);
@@ -90,14 +104,25 @@ export default function GameScreen() {
         setBosses(JSON.parse(msg.body) as BossInstance[]);
       });
 
+      stomp.subscribe('/topic/collective-bars', (msg) => {
+        if (!mounted) return;
+        setCollectiveBars(JSON.parse(msg.body) as CollectiveBar[]);
+      });
+
+      stomp.subscribe(`/topic/player/${playerId}/sobrecarga-result`, (msg) => {
+        if (!mounted) return;
+        setSobrecargaResult(JSON.parse(msg.body));
+      });
+
       // Fetch skill tree, essencias catalog, and current combat state
       try {
-        const [tree, essencias, enemies, bosses, imgs] = await Promise.all([
+        const [tree, essencias, enemies, bosses, imgs, colBars] = await Promise.all([
           getSkillTree(playerId),
           getEssencias(),
           getCombatEnemies(),
           getCombatBosses(),
           getImages(),
+          getCollectiveBars(),
         ]);
         if (mounted) {
           setSkillTree(tree);
@@ -105,6 +130,7 @@ export default function GameScreen() {
           setEnemies(enemies);
           setBosses(bosses);
           setImages(imgs);
+          setCollectiveBars(colBars);
         }
       } catch {
         // non-critical — screens will show empty states

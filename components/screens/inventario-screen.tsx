@@ -5,7 +5,15 @@ import { Colors, Fonts } from '@/constants/theme';
 import { ItemModal } from '@/components/ui/item-modal';
 import { equipItem, unequipItem } from '@/lib/api';
 import { usePlayerStore } from '@/store/playerStore';
+import { getArmorWeight } from '@/lib/rules';
 import type { Item, WeaponEquip } from '@/types';
+
+const ARMOR_DODGE_NOTE: Record<string, string> = {
+  none: 'Sem armadura · Desvio livre +AGI',
+  light: 'Leve · Desvio sem bônus',
+  medium: 'Média · Desvio com desvantagem',
+  heavy: 'Pesada · Sem desvio',
+};
 
 type EquipSlotKey = 'mainHand' | 'offHand' | 'armor' | 'amulet' | 'ring' | 'utility';
 
@@ -28,9 +36,17 @@ export function InventarioScreen() {
   const [modal, setModal] = useState<ModalState>(null);
 
   const pendentesCount = player.pendingRequests.length;
+  const [equipError, setEquipError] = useState<string | null>(null);
+
+  const mainIsTwoHanded = player.equipment.mainHand?.twoHanded === true;
 
   async function handleEquip(item: Item) {
     setMenu(null);
+    if (mainIsTwoHanded && item.equipSlot === 'offHand') {
+      setEquipError('Arma principal é de duas mãos — offhand bloqueada.');
+      return;
+    }
+    setEquipError(null);
     const updated = await equipItem(player.id, item.id);
     setPlayer(updated);
   }
@@ -49,6 +65,11 @@ export function InventarioScreen() {
           </Text>
         </View>
       )}
+      {equipError && (
+        <TouchableOpacity style={styles.errorBanner} onPress={() => setEquipError(null)} activeOpacity={0.8}>
+          <Text style={styles.errorBannerText}>{equipError}</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.cols}>
         {/* Coluna esquerda — equipamento */}
@@ -56,23 +77,40 @@ export function InventarioScreen() {
           <Text style={styles.colLabel}>EQUIPAMENTO</Text>
           {EQUIPMENT_SLOTS.map(({ key, label, icon }) => {
             const equipped = player.equipment[key] as WeaponEquip | undefined;
+            const blockedByTwoHanded = key === 'offHand' && mainIsTwoHanded && !equipped;
             return (
               <TouchableOpacity
                 key={key}
-                style={styles.equipSlot}
+                style={[styles.equipSlot, blockedByTwoHanded && styles.equipSlotBlocked]}
                 onPress={equipped ? () => handleUnequip(key) : undefined}
                 activeOpacity={equipped ? 0.7 : 1}
               >
                 <MaterialCommunityIcons
                   name={(equipped?.icon ?? icon) as any}
                   size={18}
-                  color={equipped ? Colors.ember : Colors.muted}
+                  color={blockedByTwoHanded ? Colors.border : equipped ? Colors.ember : Colors.muted}
                   style={{ opacity: equipped ? 1 : 0.4 }}
                 />
                 <View style={styles.equipInfo}>
                   <Text style={styles.equipLabel}>{label}</Text>
-                  {equipped ? (
-                    <Text style={styles.equipItemName}>{equipped.name}</Text>
+                  {blockedByTwoHanded ? (
+                    <Text style={styles.textMuted}>— bloqueado (2 mãos)</Text>
+                  ) : equipped ? (
+                    <>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.equipItemName}>{equipped.name}</Text>
+                        {equipped.twoHanded && (
+                          <View style={styles.twoHandBadge}>
+                            <Text style={styles.twoHandText}>2H</Text>
+                          </View>
+                        )}
+                      </View>
+                      {key === 'armor' && (
+                        <Text style={styles.textMuted}>
+                          {ARMOR_DODGE_NOTE[getArmorWeight(equipped.type)]}
+                        </Text>
+                      )}
+                    </>
                   ) : (
                     <Text style={styles.textMuted}>— vazio</Text>
                   )}
@@ -216,6 +254,17 @@ const styles = StyleSheet.create({
   },
   qtdText: { fontFamily: Fonts.title, fontSize: 9, color: Colors.ember },
   slotNumber: { fontFamily: Fonts.title, fontSize: 12, color: Colors.border },
+  equipSlotBlocked: { opacity: 0.4 },
+  twoHandBadge: {
+    backgroundColor: Colors.emberDim, borderWidth: 1, borderColor: Colors.ember,
+    borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1,
+  },
+  twoHandText: { fontFamily: Fonts.title, fontSize: 8, color: Colors.ember, letterSpacing: 1 },
+  errorBanner: {
+    backgroundColor: 'rgba(239,68,68,0.12)', borderBottomWidth: 1,
+    borderBottomColor: Colors.danger, paddingHorizontal: 16, paddingVertical: 7,
+  },
+  errorBannerText: { fontFamily: Fonts.body, fontSize: 13, color: Colors.danger },
   menuOverlay: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 50,

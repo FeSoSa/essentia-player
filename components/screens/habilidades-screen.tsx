@@ -11,6 +11,8 @@ import type { Slot, SkillTreeEntry } from '@/types';
 export function HabilidadesScreen() {
   const player = usePlayerStore((s) => s.player)!;
   const skillTree = usePlayerStore((s) => s.skillTree);
+  const essencias = usePlayerStore((s) => s.essencias);
+  const essenciaByName = new Map(essencias.map((e) => [e.name.toLowerCase(), e]));
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [selectedSkill, setSelectedSkill] = useState<SkillTreeEntry | null>(null);
   const [treeVisible, setTreeVisible] = useState(false);
@@ -46,13 +48,19 @@ export function HabilidadesScreen() {
     return acc;
   }, {});
 
-  const sections = Object.entries(byCategory).map(([title, data]) => ({ title: title.toUpperCase(), data }));
+  const sections = Object.entries(byCategory).map(([title, data], i) => ({ title: title.toUpperCase(), data, key: `${title}-${i}` }));
 
   return (
     <View style={styles.container}>
       <View style={styles.slotsSection}>
         <Text style={styles.sectionLabel}>HABILIDADES EQUIPADAS</Text>
-        <SlotGrid slots={player.slots} skillMap={skillMap} onSlotPress={handleSlotPress} />
+        <SlotGrid
+          slots={player.slots}
+          classCount={player.char.slotsClass}
+          freeCount={player.char.slotsTotal - player.char.slotsClass}
+          skillMap={skillMap}
+          onSlotPress={handleSlotPress}
+        />
       </View>
 
       <View style={styles.divider} />
@@ -73,18 +81,22 @@ export function HabilidadesScreen() {
             <View style={styles.sectionLine} />
           </View>
         )}
-        renderItem={({ item }) => (
-          <SkillCard
-            skill={item}
-            equipped={equippedIds.has(item.skillId)}
-            cooldown={cooldownMap.get(item.skillId) ?? 0}
-            onPress={
-              item.unlocked && !cooldownMap.has(item.skillId) && equippedIds.has(item.skillId)
-                ? () => handleSkillPress(item)
-                : undefined
-            }
-          />
-        )}
+        renderItem={({ item }) => {
+          const essencia = essenciaByName.get(item.categoria?.toLowerCase() ?? '');
+          return (
+            <SkillCard
+              skill={item}
+              equipped={equippedIds.has(item.skillId)}
+              cooldown={cooldownMap.get(item.skillId) ?? 0}
+              essenciaType={essencia?.type}
+              onPress={
+                item.unlocked && !cooldownMap.has(item.skillId) && equippedIds.has(item.skillId)
+                  ? () => handleSkillPress(item)
+                  : undefined
+              }
+            />
+          );
+        }}
       />
 
       <SkillModal

@@ -15,7 +15,7 @@ const TABS: TabConfig[] = [
   { id: 'mapa',        icon: 'map-outline',                    label: 'Mapa'   },
   { id: 'geral',       icon: 'shield-account',                 label: 'Geral'  },
   { id: 'atributos',   icon: 'chart-bar',                      label: 'Atribs' },
-  { id: 'inventario',  icon: 'bag-personal-outline',           label: 'Inv.'   },
+  { id: 'inventario',  icon: 'briefcase-outline',               label: 'Itens'  },
   { id: 'habilidades', icon: 'lightning-bolt',                 label: 'Hab.'   },
   { id: 'docs',        icon: 'book-open-page-variant-outline', label: 'Docs'   },
   { id: 'config',      icon: 'cog-outline',                    label: 'Config' },

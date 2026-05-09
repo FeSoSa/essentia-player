@@ -2,9 +2,14 @@ import { Client } from '@stomp/stompjs';
 import { getServerIp } from './storage';
 
 let client: Client | null = null;
+let onReconnectCallback: (() => void) | null = null;
+let initialConnectDone = false;
 
-export async function connectStomp(): Promise<Client> {
+export async function connectStomp(onReconnect?: () => void): Promise<Client> {
   if (client?.active) return client;
+
+  onReconnectCallback = onReconnect ?? null;
+  initialConnectDone = false;
 
   const ip = await getServerIp();
   const url = `ws://${ip}:8080/ws-native`;
@@ -14,8 +19,7 @@ export async function connectStomp(): Promise<Client> {
     client = new Client({
       webSocketFactory: () => {
         const ws = new WebSocket(url, ['v10.stomp', 'v11.stomp', 'v12.stomp']);
-        // Android/OkHttp strips null bytes (\0) from text frames, breaking STOMP framing.
-        // Convert strings to binary so the \0 terminator is preserved.
+        // Android/OkHttp strips null bytes from text frames — send as binary
         const _send = ws.send.bind(ws);
         (ws as any).send = (data: string | ArrayBuffer | ArrayBufferView) => {
           if (typeof data === 'string') {
@@ -29,24 +33,34 @@ export async function connectStomp(): Promise<Client> {
         return ws;
       },
       connectHeaders: { host: ip },
-      heartbeatIncoming: 0,
-      heartbeatOutgoing: 0,
-      reconnectDelay: 2000,
-      debug: (msg) => console.log('[STOMP]', msg),
+      // Heartbeat detects silent drops — 20s in/out
+      heartbeatIncoming: 20000,
+      heartbeatOutgoing: 20000,
+      reconnectDelay: 3000,
       onConnect: (frame) => {
         console.log('[STOMP] connected', frame.headers);
-        resolve(client!);
+        if (!initialConnectDone) {
+          initialConnectDone = true;
+          resolve(client!);
+        } else {
+          // Reconnect — re-fetch current state
+          console.log('[STOMP] reconnected, refreshing state…');
+          onReconnectCallback?.();
+        }
       },
       onStompError: (frame) => {
         console.error('[STOMP] error', frame.headers['message'], frame.body);
-        reject(new Error(frame.headers['message'] ?? 'STOMP error'));
+        if (!initialConnectDone) reject(new Error(frame.headers['message'] ?? 'STOMP error'));
       },
       onWebSocketError: (evt) => {
         console.error('[STOMP] websocket error', evt);
-        reject(new Error('WebSocket connection failed'));
+        if (!initialConnectDone) reject(new Error('WebSocket connection failed'));
       },
       onWebSocketClose: (evt) => {
-        console.warn('[STOMP] websocket closed', evt.code, evt.reason);
+        console.warn('[STOMP] websocket closed', evt.code, evt.reason, '— will retry in 3s');
+      },
+      onDisconnect: () => {
+        console.warn('[STOMP] STOMP disconnected');
       },
     });
     client.activate();
@@ -54,6 +68,8 @@ export async function connectStomp(): Promise<Client> {
 }
 
 export function disconnectStomp(): void {
+  onReconnectCallback = null;
+  initialConnectDone = false;
   client?.deactivate();
   client = null;
 }

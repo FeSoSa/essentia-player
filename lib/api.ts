@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getServerIp } from './storage';
-import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage } from '@/types';
+import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar } from '@/types';
 
 const api = axios.create();
 
@@ -44,6 +44,11 @@ export async function adjustEther(playerId: string, delta: number): Promise<Play
   return res.data;
 }
 
+export async function adjustPressao(playerId: string, delta: number): Promise<Player> {
+  const res = await api.put<Player>(`/api/players/${playerId}/pressao`, { delta });
+  return res.data;
+}
+
 export async function getEssencias(): Promise<Essencia[]> {
   const res = await api.get<Essencia[]>('/api/master/essencias');
   return res.data;
@@ -63,12 +68,33 @@ export async function requestItem(playerId: string, itemId: string): Promise<Pla
   return res.data;
 }
 
-export async function useSkill(playerId: string, slotId: string): Promise<void> {
-  await api.post(`/api/players/${playerId}/use-skill`, { slotId });
+export async function useSkill(
+  playerId: string,
+  slotId: string,
+  options: { diceRoll?: number; targetId?: string; targetType?: 'enemy' | 'boss' } = {}
+): Promise<DamageResult> {
+  const res = await api.post<DamageResult>(`/api/players/${playerId}/use-skill`, { slotId, ...options });
+  return res.data;
+}
+
+export async function applyEnemyDamage(instanceId: string, damage: number): Promise<void> {
+  await api.post(`/api/combat/enemies/${instanceId}/damage`, { damage });
+}
+
+export async function applyBossDamage(instanceId: string, damage: number): Promise<void> {
+  await api.post(`/api/combat/bosses/${instanceId}/damage`, { damage });
 }
 
 export async function unlockSkill(playerId: string, skillId: string): Promise<void> {
   await api.post(`/api/players/${playerId}/unlock-skill`, { skillId });
+}
+
+export async function chooseMasteryPath(
+  playerId: string,
+  skillId: string,
+  choice: 'aumento' | 'otimizacao'
+): Promise<void> {
+  await api.post(`/api/players/${playerId}/mastery-choice`, { skillId, choice });
 }
 
 export async function equipItem(playerId: string, itemId: string): Promise<Player> {
@@ -81,8 +107,22 @@ export async function unequipItem(playerId: string, slot: string): Promise<Playe
   return res.data;
 }
 
+export async function executeDesvio(playerId: string): Promise<Player> {
+  const res = await api.post<Player>(`/api/players/${playerId}/desvio`);
+  return res.data;
+}
+
 export async function voteFastAction(playerId: string, optionId: string): Promise<void> {
   await api.post('/api/fast-action/vote', { playerId, optionId });
+}
+
+export async function requestSobrecarga(playerId: string, nivel: number): Promise<void> {
+  await api.post(`/api/players/${playerId}/sobrecarga/request`, { nivel });
+}
+
+export async function deactivateSobrecarga(playerId: string): Promise<Player> {
+  const res = await api.post<Player>(`/api/players/${playerId}/sobrecarga/deactivate`);
+  return res.data;
 }
 
 export async function getImages(): Promise<GameImage[]> {
@@ -97,5 +137,10 @@ export async function getCombatEnemies(): Promise<EnemyInstance[]> {
 
 export async function getCombatBosses(): Promise<BossInstance[]> {
   const res = await api.get<BossInstance[]>('/api/combat/bosses');
+  return res.data;
+}
+
+export async function getCollectiveBars(): Promise<CollectiveBar[]> {
+  const res = await api.get<CollectiveBar[]>('/api/master/collective-bars');
   return res.data;
 }

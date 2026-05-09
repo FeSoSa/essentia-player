@@ -3,21 +3,30 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts } from '@/constants/theme';
 import type { SkillTreeEntry } from '@/types';
 
+const ESSENCIA_BORDER: Record<string, string> = {
+  Grande:  '#d4a84e',
+  Mitica:  '#a855f7',
+  Derivada: '#4ade80',
+};
+
 interface Props {
   skill: SkillTreeEntry;
   equipped?: boolean;
   cooldown?: number;
   onPress?: () => void;
+  essenciaType?: string;
 }
 
-export function SkillCard({ skill, equipped = false, cooldown = 0, onPress }: Props) {
+export function SkillCard({ skill, equipped = false, cooldown = 0, onPress, essenciaType }: Props) {
   const locked = !skill.unlocked;
   const hasCooldown = cooldown > 0;
+  const essenciaBorderColor = essenciaType ? ESSENCIA_BORDER[essenciaType] : undefined;
 
   return (
     <TouchableOpacity
       style={[
         styles.card,
+        essenciaBorderColor ? { borderLeftColor: essenciaBorderColor, borderLeftWidth: 3 } : undefined,
         equipped && styles.cardEquipped,
         hasCooldown && styles.cardCooldown,
         locked && styles.cardLocked,
@@ -34,6 +43,11 @@ export function SkillCard({ skill, equipped = false, cooldown = 0, onPress }: Pr
           <Text style={[styles.nome, locked && styles.textLocked]} numberOfLines={1}>
             {skill.nome}
           </Text>
+          {!locked && skill.maestria && skill.maestria.level > 0 && (
+            <View style={styles.maestriaBadge}>
+              <Text style={styles.maestriaBadgeText}>M{skill.maestria.level}</Text>
+            </View>
+          )}
         </View>
         <Text style={styles.custo}>{skill.custo}</Text>
       </View>
@@ -72,4 +86,9 @@ const styles = StyleSheet.create({
   cooldownLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.danger, letterSpacing: 2, marginTop: 4 },
   equippedLabel: { fontFamily: Fonts.title, fontSize: 8, color: Colors.ember, letterSpacing: 2, marginTop: 4 },
   requirementsText: { fontFamily: Fonts.body, fontSize: 11, color: Colors.danger, marginTop: 4, fontStyle: 'italic' },
+  maestriaBadge: {
+    backgroundColor: Colors.gold, borderRadius: 2,
+    paddingHorizontal: 4, paddingVertical: 1, marginLeft: 6,
+  },
+  maestriaBadgeText: { fontFamily: Fonts.title, fontSize: 8, color: Colors.bg, letterSpacing: 1 },
 });

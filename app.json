@@ -13,10 +13,12 @@
     },
     "androidStatusBar": {
       "hidden": true,
-      "translucent": true
+      "translucent": true,
+      "backgroundColor": "#00000000"
     },
     "androidNavigationBar": {
-      "visible": "immersive"
+      "visible": "immersive",
+      "barStyle": "dark-content"
     },
     "android": {
       "adaptiveIcon": {

@@ -4,6 +4,8 @@ import type { Slot, SkillTreeEntry } from '@/types';
 
 interface Props {
   slots: Slot[];
+  classCount?: number;
+  freeCount?: number;
   skillMap?: Map<string, SkillTreeEntry>;
   onSlotPress?: (slot: Slot) => void;
 }
@@ -14,15 +16,20 @@ const SLOT_BORDER_COLORS: Record<string, string> = {
   human_bonus: Colors.gold,
 };
 
-export function SlotGrid({ slots, skillMap, onSlotPress }: Props) {
+export function SlotGrid({ slots, classCount, freeCount, skillMap, onSlotPress }: Props) {
   const classeSlots = slots.filter((s) => s.type === 'class');
-  const livreSlots = slots.filter((s) => s.type === 'free');
-  const bonusSlots = slots.filter((s) => s.type === 'human_bonus');
+  // human_bonus é tratado como slot livre para exibição
+  const livreSlots  = slots.filter((s) => s.type === 'free' || s.type === 'human_bonus');
+
+  const nClass = classCount ?? classeSlots.length;
+  const nFree  = freeCount  ?? livreSlots.length;
+
+  const classePadded = Array.from({ length: nClass }, (_, i) => classeSlots[i] ?? null);
+  const livrePadded  = Array.from({ length: nFree  }, (_, i) => livreSlots[i]  ?? null);
 
   const groups = [
-    { label: 'CLASSE', slots: classeSlots },
-    { label: 'LIVRES', slots: livreSlots },
-    ...(bonusSlots.length > 0 ? [{ label: 'BÔNUS', slots: bonusSlots }] : []),
+    { label: 'CLASSE', slots: classePadded },
+    { label: 'LIVRES', slots: livrePadded  },
   ].filter((g) => g.slots.length > 0);
 
   return (
@@ -31,7 +38,10 @@ export function SlotGrid({ slots, skillMap, onSlotPress }: Props) {
         <View key={group.label} style={styles.group}>
           <Text style={styles.groupLabel}>{group.label}</Text>
           <View style={styles.row}>
-            {group.slots.map((slot) => {
+            {group.slots.map((slot, idx) => {
+              if (!slot) {
+                return <View key={`empty-${idx}`} style={styles.slot} />;
+              }
               const filled = !!slot.skillId;
               const hasCooldown = slot.cooldownRemaining > 0;
               const skill = slot.skillId ? skillMap?.get(slot.skillId) : undefined;

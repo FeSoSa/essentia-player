@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance } from '@/types';
+import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar } from '@/types';
 
 interface GameStore {
   activeTab: TabId;
@@ -11,6 +11,8 @@ interface GameStore {
   turnCount: number;
   enemies: EnemyInstance[];
   bosses: BossInstance[];
+  collectiveBars: CollectiveBar[];
+  setCollectiveBars: (bars: CollectiveBar[]) => void;
   setActiveTab: (tab: TabId) => void;
   setImages: (imgs: GameImage[]) => void;
   nextImage: () => void;
@@ -33,6 +35,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   turnCount: 0,
   enemies: [],
   bosses: [],
+  collectiveBars: [],
+  setCollectiveBars: (collectiveBars) => set({ collectiveBars }),
 
   setActiveTab: (tab) =>
     set({ activeTab: tab, hasNewImage: tab === 'mapa' ? false : get().hasNewImage }),

@@ -31,8 +31,8 @@ export interface Attributes {
 
 export interface CharInfo {
   name: string;
+  classe: string;
   skillClass: string;
-  subClass?: string;
   race: string;
   level: number;
   slotsClass: number;
@@ -56,6 +56,16 @@ export interface Item {
   type: string;
   icon?: string;
   equipSlot?: string;
+  twoHanded?: boolean;
+  armorWeight?: string;
+}
+
+export interface DamageResult {
+  totalDamage: number;
+  rolls: number[];
+  formula?: string;
+  costType?: string;
+  costAmount?: number;
 }
 
 export interface WeaponEquip {
@@ -63,15 +73,30 @@ export interface WeaponEquip {
   name: string;
   type: string;
   icon?: string;
+  twoHanded?: boolean;
+}
+
+export interface ArmorEquip {
+  id: string;
+  name: string;
+  damageReduction?: number;
+  attributeBonus?: Record<string, number>;
+  armorWeight?: string;
+}
+
+export interface AccessoryEquip {
+  id: string;
+  name: string;
+  attributeBonus?: Record<string, number>;
 }
 
 export interface Equipment {
   mainHand?: WeaponEquip;
   offHand?: WeaponEquip;
-  armor?: WeaponEquip;
-  amulet?: WeaponEquip;
-  ring?: WeaponEquip;
-  utility?: WeaponEquip;
+  armor?: ArmorEquip;
+  amulet?: AccessoryEquip;
+  ring?: AccessoryEquip;
+  utility?: AccessoryEquip;
 }
 
 export interface EssenciaObtida {
@@ -87,6 +112,8 @@ export interface Essencia {
   desc: string;
   attributeBonus: Record<string, number>;
   skillIds: string[];
+  icon?: string;
+  color?: string;
 }
 
 export interface PendingRequest {
@@ -101,8 +128,19 @@ export interface StatusEffect {
   name: string;
   desc: string;
   icon?: string;
+  color?: string;
   durationTurns: number;
 }
+
+export interface CustomBar {
+  id: string;
+  name: string;
+  color: string;
+  current: number;
+  max: number;
+}
+
+export type CollectiveBar = CustomBar;
 
 export interface Player {
   id: string;
@@ -111,6 +149,7 @@ export interface Player {
   hp: Vital;
   flow: Vital;
   ether: Ether;
+  pressao?: Vital;
   exp: Exp;
   attributes: Attributes;
   essenciasObtidas: EssenciaObtida[];
@@ -120,7 +159,29 @@ export interface Player {
   items: Item[];
   pendingRequests: PendingRequest[];
   gold: number;
+  desviosRestantes: number;
+  sobrecargaDesbloqueada?: boolean;
+  customBars?: CustomBar[];
+  sobrecargaAtiva?: boolean;
+  sobrecargaNivel?: number;
 }
+
+export interface SobrecargaLevel {
+  nivel: number;
+  bonus: number;
+  custo: number;
+  cd: number;
+  danoDado: string;
+}
+
+export const SOBRECARGA_LEVELS: SobrecargaLevel[] = [
+  { nivel: 1, bonus: 2,  custo: 60,  cd: 10, danoDado: '2d6' },
+  { nivel: 2, bonus: 4,  custo: 90,  cd: 12, danoDado: '3d6' },
+  { nivel: 3, bonus: 6,  custo: 125, cd: 14, danoDado: '4d6' },
+  { nivel: 4, bonus: 8,  custo: 165, cd: 16, danoDado: '5d6' },
+  { nivel: 5, bonus: 10, custo: 210, cd: 18, danoDado: '6d6' },
+  { nivel: 6, bonus: 12, custo: 260, cd: 20, danoDado: '8d6' },
+];
 
 // Skill tree entry — from GET /api/players/{id}/skill-tree
 export interface SkillTreeEntry {
@@ -137,6 +198,7 @@ export interface SkillTreeEntry {
     level: number;
     totalUses: number;
     nextLevelUses: number;
+    choices?: Array<'aumento' | 'otimizacao'>;
   };
 }
 
