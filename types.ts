@@ -232,6 +232,7 @@ export interface SkillTreeEntry {
   danoBase?: number;      // valor fixo adicionado ao dano antes do dado
   cooldownTurns?: number; // turnos de cooldown após uso
   skillType?: string;     // "class" | "weapon" | "essencia" | "mestre"
+  pressaoDice?: boolean;  // +1d6 por ponto de Pressão ao usar
 }
 
 // Game state types (from WebSocket topics)

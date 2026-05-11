@@ -80,9 +80,14 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const [error,         setError]         = useState<string | null>(null);
 
   // Use-skill state
-  const [useStep, setUseStep] = useState<'target' | 'hit' | 'damage'>('target');
+  const [useStep, setUseStep] = useState<'target' | 'hit' | 'damage' | 'result'>('target');
+  const [usageStarted, setUsageStarted] = useState(false); // ignora cooldown após iniciar o fluxo
   const [hitInput, setHitInput] = useState('');
+  const [bonusInput, setBonusInput] = useState('');
+  const [hitPadMode, setHitPadMode] = useState<'d20' | 'bonus'>('d20');
+  const [pressaoInput, setPressaoInput] = useState('');
   const [diceInput,     setDiceInput]     = useState('');
+  const [dmgPadMode, setDmgPadMode] = useState<'dice' | 'pressao'>('dice');
   const [selectedTarget, setSelectedTarget] = useState<{ id: string; kind: TargetKind } | null>(null);
   const [useResult,       setUseResult]       = useState<DamageResult | null>(null);
   const [useLoading,      setUseLoading]      = useState(false);
@@ -116,27 +121,35 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const validDice    = !isNaN(diceValue) && diceValue > 0;
   const skillMod     = skill ? getSkillMod(skill.categoria ?? '', player.attributes) : null;
   const agiMod       = getModifier((player.effectiveAttributes ?? player.attributes).agility);
+  const bonusValue   = parseInt(bonusInput, 10) || 0;
   const hitValue     = parseInt(hitInput, 10);
   const validHit     = !isNaN(hitValue) && hitValue >= 1;
-  const hitTotal     = validHit ? hitValue + agiMod : null;
-  const diceFormula  = skill ? parseDice(skill.descricao) : null;
-  const danoBase = skill?.danoBase ?? 0;
-  const basePreview  = validDice && skillMod
-    ? diceValue + skillMod.value + danoBase
-    : validDice
-    ? diceValue + danoBase
+  const hitTotal     = validHit ? hitValue + agiMod + bonusValue : null;
+  const diceFormula   = skill ? parseDice(skill.descricao) : null;
+  const danoBase      = skill?.danoBase ?? 0;
+  const pressaoValue  = parseInt(pressaoInput, 10) || 0;
+  const baseDamage    = validDice
+    ? danoBase + (skillMod ? Math.round((diceValue * skillMod.value) / 4) : diceValue)
     : null;
   const maestriaBonus = maestria?.bonusDano ?? 0;
-  const damagePreview = basePreview !== null && maestriaBonus > 0
-    ? Math.round(basePreview * (1 + maestriaBonus))
-    : basePreview;
+  const damageWithMaestria = baseDamage !== null
+    ? maestriaBonus > 0 ? Math.round(baseDamage * (1 + maestriaBonus)) : baseDamage
+    : null;
+  const damagePreview = damageWithMaestria !== null
+    ? damageWithMaestria + pressaoValue
+    : null;
   const hasCombat    = enemies.length > 0 || bosses.length > 0;
 
   function handleClose() {
     setError(null);
     setUseStep('target');
+    setUsageStarted(false);
     setHitInput('');
+    setBonusInput('');
+    setHitPadMode('d20');
+    setPressaoInput('');
     setDiceInput('');
+    setDmgPadMode('dice');
     setSelectedTarget(null);
     setUseResult(null);
     onClose();
@@ -150,6 +163,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     try {
       const res = await useSkill(player.id, activeSlot.id, {});
       setUseResult(res);
+      setUsageStarted(true);
       setUseStep('hit');
     } catch (err: any) {
       const data = err?.response?.data;
@@ -172,6 +186,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
         diceRoll: validDice ? diceValue : undefined,
       });
       setUseResult(res);
+      setUseStep('result');
     } catch (err: any) {
       const data = err?.response?.data;
       const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
@@ -222,6 +237,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
       });
       setPendingRequestId(reqId);
       setDamageResult(null);
+      setUseStep('result');
     } catch (err: any) {
       const msg = err?.response?.data?.message ?? err?.message;
       setError(typeof msg === 'string' ? msg : 'Erro ao solicitar dano.');
@@ -294,21 +310,28 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
 
           <View style={styles.divider} />
 
+          {/* Cooldown — visível em ambos os modos, fora do scroll */}
+          {cooldown > 0 && (
+            <Text style={styles.cooldownText}>
+              Em cooldown: {cooldown} turno{cooldown > 1 ? 's' : ''}
+            </Text>
+          )}
+
+          {/* ── Passiva (modo de uso) ── */}
+          {activeSlot && skill.isPassive && (
+            <View style={styles.passivaMsgBlock}>
+              <Text style={styles.passivaMsgText}>Habilidade passiva — bônus aplicado automaticamente enquanto equipada.</Text>
+            </View>
+          )}
+
+          {/* Conteúdo scrollável — só na aba de habilidades */}
+          {!activeSlot && (
           <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-            {/* Descrição — esconde no modo de uso */}
-            {!activeSlot && <Text style={styles.descricao}>{skill.descricao}</Text>}
-
-            {/* Cooldown atual (slot em espera) */}
-            {cooldown > 0 && (
-              <Text style={styles.cooldownText}>
-                Em cooldown: {cooldown} turno{cooldown > 1 ? 's' : ''}
-              </Text>
-            )}
+            <Text style={styles.descricao}>{skill.descricao}</Text>
 
             {/* Bloco de detalhes — custo, dano, cooldown base */}
-            {!activeSlot && (
-              <View style={styles.detailsBlock}>
+            <View style={styles.detailsBlock}>
                 {/* Custo */}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>CUSTO</Text>
@@ -330,19 +353,18 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                     </Text>
                   </View>
                 )}
-              </View>
-            )}
+            </View>
 
-            {/* Requisitos — só na aba Habilidades */}
-            {!activeSlot && skill.requirementsText && (
+            {/* Requisitos */}
+            {skill.requirementsText && (
               <View style={styles.reqBlock}>
                 <Text style={styles.blockLabel}>REQUISITOS</Text>
                 <Text style={styles.reqText}>{skill.requirementsText}</Text>
               </View>
             )}
 
-            {/* Maestria — só na aba Habilidades */}
-            {!activeSlot && maestria && (
+            {/* Maestria */}
+            {maestria && (
               <View style={styles.maestriaBlock}>
                 <View style={styles.maestriaHeader}>
                   <Text style={styles.blockLabel}>MAESTRIA</Text>
@@ -453,155 +475,192 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               </View>
             )}
 
-            {/* ── Passiva — sem seção de uso ── */}
-            {activeSlot && skill.isPassive && (
-              <View style={styles.passivaMsgBlock}>
-                <Text style={styles.passivaMsgText}>
-                  Habilidade passiva — bônus aplicado automaticamente enquanto equipada.
-                </Text>
-              </View>
-            )}
-
-            {/* ── PASSO 1: Escolher alvo ── */}
-            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (
-              <View style={styles.useSection}>
-                <Text style={styles.stepLabel}>PASSO 1 — ALVO</Text>
-                {enemies.map((e) => (
-                  <TouchableOpacity
-                    key={e.instanceId}
-                    style={[styles.targetBtn, selectedTarget?.id === e.instanceId && styles.targetBtnSelected]}
-                    onPress={() => setSelectedTarget(selectedTarget?.id === e.instanceId ? null : { id: e.instanceId, kind: 'enemy' })}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.targetIcon}>{e.icon || '⚔'}</Text>
-                    <Text style={styles.targetName} numberOfLines={1}>{e.name}</Text>
-                    <View style={[styles.entityHpDot, { width: 8, height: 8, borderRadius: 4 }]} />
-                    <Text style={styles.targetHp}>{e.hpCurrent}/{e.hpMax}</Text>
-                  </TouchableOpacity>
-                ))}
-                {bosses.map((b) => {
-                  const phase = b.phases[b.currentPhase];
-                  return (
-                    <TouchableOpacity
-                      key={b.instanceId}
-                      style={[styles.targetBtn, selectedTarget?.id === b.instanceId && styles.targetBtnSelected]}
-                      onPress={() => setSelectedTarget(selectedTarget?.id === b.instanceId ? null : { id: b.instanceId, kind: 'boss' })}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.targetIcon}>★</Text>
-                      <Text style={styles.targetName} numberOfLines={1}>
-                        {b.currentPhase > 0 && b.phases[b.currentPhase]?.name
-                          ? `${b.name} — ${b.phases[b.currentPhase]!.name}`
-                          : b.name}
-                      </Text>
-                      <Text style={styles.targetHp}>{b.hpCurrent}/{phase?.hpMax ?? '?'}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-                <TouchableOpacity onPress={() => setUseStep('damage')} activeOpacity={0.7}>
-                  <Text style={styles.skipLink}>Sem alvo (buff/área) →</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* ── PASSO 2: Rolagem de acerto ── */}
-            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && hasCombat && useStep === 'hit' && (
-              <View style={styles.useSection}>
-                <Text style={styles.stepLabel}>PASSO 2 — ACERTO</Text>
-                <View style={styles.numPadRow}>
-                  <NumPad value={hitInput} onChange={setHitInput} maxLength={2} />
-                  <View style={styles.numPadResult}>
-                    <View style={styles.diceModWrap}>
-                      <Text style={styles.diceLabel}>1d20</Text>
-                      <Text style={styles.diceResult}>{hitInput || '—'}</Text>
-                    </View>
-                    <Text style={styles.diceLabel}>+ AGI {formatMod(agiMod)}</Text>
-                    {hitTotal !== null && (
-                      <View style={{ marginTop: 6 }}>
-                        <Text style={styles.diceLabel}>TOTAL</Text>
-                        <Text style={[styles.diceResult, { fontSize: 28 }]}>{hitTotal}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* ── PASSO 3: Dano ── */}
-            {activeSlot && cooldown === 0 && !skill.isPassive && ((hasCombat && useStep === 'damage') || (!hasCombat && !useResult)) && (
-              <View style={styles.useSection}>
-                <Text style={styles.stepLabel}>{hasCombat ? 'PASSO 3 — DANO' : 'USAR HABILIDADE'}</Text>
-                <View style={styles.custoRow}>
-                  <Text style={styles.custoLabel}>CUSTO</Text>
-                  <Text style={styles.custoValue}>{skill.custo}</Text>
-                </View>
-                <View style={styles.numPadRow}>
-                  <NumPad value={diceInput} onChange={setDiceInput} maxLength={3} />
-                  <View style={styles.numPadResult}>
-                    {(skill?.danoFormula || diceFormula) && (
-                      <Text style={styles.formulaHint}>⚔ {skill?.danoFormula ?? diceFormula}</Text>
-                    )}
-                    <View style={styles.diceModWrap}>
-                      <Text style={styles.diceLabel}>DADO</Text>
-                      <Text style={styles.diceResult}>{diceInput || '—'}</Text>
-                    </View>
-                    {skillMod && (
-                      <Text style={styles.diceLabel}>+ {skillMod.label} {formatMod(skillMod.value)}</Text>
-                    )}
-                    {damagePreview !== null && (
-                      <View style={{ marginTop: 6 }}>
-                        <Text style={styles.diceLabel}>ESTIMADO</Text>
-                        <Text style={[styles.diceResult, { fontSize: 28 }]}>{damagePreview}</Text>
-                        {maestriaBonus > 0 && (
-                          <Text style={styles.diceLabel}>+{Math.round(maestriaBonus * 100)}% maestria</Text>
-                        )}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* ── Resultado ── */}
-            {useResult && (
-              <View style={styles.resultBlock}>
-                <Text style={styles.resultLabel}>DANO TOTAL</Text>
-                <Text style={styles.resultDamage}>{useResult.damage ?? '—'}</Text>
-                {useResult.costPaid && useResult.costPaid.length > 0 && (
-                  <Text style={styles.resultCost}>
-                    Custo: {useResult.costPaid.map((c) => `${c.value} ${c.type}`).join(', ')}
-                  </Text>
-                )}
-                {selectedTarget && !pendingRequestId && (
-                  <TouchableOpacity
-                    style={[styles.applyBtn, applyingDmg && styles.btnDisabled]}
-                    onPress={handleRequestDamage}
-                    disabled={applyingDmg}
-                    activeOpacity={0.7}
-                  >
-                    {applyingDmg
-                      ? <ActivityIndicator color={Colors.text} size="small" />
-                      : <Text style={styles.applyBtnText}>SOLICITAR DANO AO MESTRE</Text>
-                    }
-                  </TouchableOpacity>
-                )}
-                {pendingRequestId && (
-                  <View style={styles.waitingBlock}>
-                    <ActivityIndicator color={Colors.ember} size="small" />
-                    <Text style={styles.waitingText}>Aguardando aprovação do mestre…</Text>
-                  </View>
-                )}
-              </View>
-            )}
-
           </ScrollView>
+          )}
+
+          {/* ── Steps de uso (fora do ScrollView, sem scroll) ── */}
+          {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && (
+            <View style={styles.stepsContainer}>
+
+              {/* PASSO 1 — ALVO */}
+              {hasCombat && useStep === 'target' && (
+                <View style={styles.stepInline}>
+                  <View style={styles.targetRow}>
+                    {[...enemies.map(e => ({ id: e.instanceId, kind: 'enemy' as TargetKind, icon: e.icon || '⚔', name: e.name, hp: `${e.hpCurrent}/${e.hpMax}` })),
+                      ...bosses.map(b => ({ id: b.instanceId, kind: 'boss' as TargetKind, icon: '★', name: b.currentPhase > 0 && b.phases[b.currentPhase]?.name ? `${b.name} — ${b.phases[b.currentPhase]!.name}` : b.name, hp: `${b.hpCurrent}/${b.phases[b.currentPhase]?.hpMax ?? '?'}` }))
+                    ].map(t => (
+                      <TouchableOpacity key={t.id}
+                        style={[styles.targetBtnCompact, selectedTarget?.id === t.id && styles.targetBtnSelected]}
+                        onPress={() => setSelectedTarget(selectedTarget?.id === t.id ? null : { id: t.id, kind: t.kind })}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.targetIcon}>{t.icon}</Text>
+                        <Text style={styles.targetName} numberOfLines={1}>{t.name}</Text>
+                        <Text style={styles.targetHp}>{t.hp}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  <TouchableOpacity onPress={() => setUseStep('damage')} activeOpacity={0.7}>
+                    <Text style={styles.skipLink}>Sem alvo →</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* PASSO 2 — ACERTO */}
+              {hasCombat && useStep === 'hit' && (
+                <View style={styles.stepInline}>
+                  <NumPad
+                    value={hitPadMode === 'd20' ? hitInput : bonusInput}
+                    onChange={hitPadMode === 'd20' ? setHitInput : setBonusInput}
+                    maxLength={hitPadMode === 'd20' ? 2 : 3}
+                  />
+                  <View style={styles.stepSide}>
+                    <Text style={styles.stepBig}>{hitInput || '—'}</Text>
+                    <Text style={styles.stepSub}>
+                      1d20 + AGI {formatMod(agiMod)}{bonusValue !== 0 ? `  bônus ${formatMod(bonusValue)}` : ''}
+                    </Text>
+                    <View style={styles.bonusRow}>
+                      <TouchableOpacity
+                        style={[styles.padModeBtn, hitPadMode === 'bonus' && styles.padModeBtnActive]}
+                        onPress={() => setHitPadMode(m => m === 'd20' ? 'bonus' : 'd20')}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.padModeBtnText, hitPadMode === 'bonus' && styles.padModeBtnTextActive]}>
+                          PAD
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={styles.bonusLabel}>BÔNUS</Text>
+                      {hitPadMode === 'bonus' ? (
+                        <Text style={[styles.bonusField, styles.bonusFieldDisplay]}>
+                          {bonusInput || '0'}
+                        </Text>
+                      ) : (
+                        <TextInput
+                          style={styles.bonusField}
+                          value={bonusInput}
+                          onChangeText={setBonusInput}
+                          keyboardType="number-pad"
+                          placeholder="0"
+                          placeholderTextColor={Colors.muted}
+                        />
+                      )}
+                    </View>
+                    {hitTotal !== null && (
+                      <Text style={[styles.stepBig, { fontSize: 32, color: Colors.tealBright }]}>{hitTotal}</Text>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* PASSO 3 — DANO */}
+              {((hasCombat && useStep === 'damage') || (!hasCombat && useStep === 'target')) && (
+                <View style={styles.stepCol}>
+                  {/* Linha superior: numpad + info */}
+                  <View style={styles.stepInline}>
+                    {skill.danoFormula ? (
+                      <NumPad
+                        value={dmgPadMode === 'dice' ? diceInput : pressaoInput}
+                        onChange={dmgPadMode === 'dice' ? setDiceInput : setPressaoInput}
+                        maxLength={3}
+                      />
+                    ) : null}
+                    <View style={styles.stepSide}>
+                      {(skill?.danoFormula || diceFormula) && (
+                        <Text style={styles.formulaHint}>⚔ {skill?.danoFormula ?? diceFormula}</Text>
+                      )}
+                      {skill.custo && skill.custo !== '—' && (
+                        <Text style={styles.stepSub}>CUSTO  {skill.custo}</Text>
+                      )}
+                      {skill.danoFormula ? (
+                        <>
+                          <Text style={styles.stepBig}>{diceInput || '—'}</Text>
+
+                          {/* Sem pressão: mostra intermediário + maestria */}
+                          {(!skill.pressaoDice || !player.pressao) && damageWithMaestria !== null && (
+                            <>
+                              <Text style={[styles.stepBig, { fontSize: 32, color: Colors.ember }]}>
+                                {damageWithMaestria}
+                              </Text>
+                              {maestriaBonus > 0 && (
+                                <Text style={styles.stepSub}>+{Math.round(maestriaBonus * 100)}% maestria</Text>
+                              )}
+                            </>
+                          )}
+
+                          {/* Com pressão: campo de input + total final */}
+                          {skill.pressaoDice && player.pressao && (
+                            <>
+                              <View style={styles.bonusRow}>
+                                <TouchableOpacity
+                                  style={[styles.padModeBtn, dmgPadMode === 'pressao' && styles.padModeBtnActive]}
+                                  onPress={() => setDmgPadMode(m => m === 'dice' ? 'pressao' : 'dice')}
+                                  activeOpacity={0.7}
+                                >
+                                  <Text style={[styles.padModeBtnText, dmgPadMode === 'pressao' && styles.padModeBtnTextActive]}>
+                                    PAD
+                                  </Text>
+                                </TouchableOpacity>
+                                <Text style={styles.bonusLabel}>P {player.pressao.current}d6</Text>
+                                {dmgPadMode === 'pressao' ? (
+                                  <Text style={[styles.bonusField, styles.bonusFieldDisplay]}>
+                                    {pressaoInput || '0'}
+                                  </Text>
+                                ) : (
+                                  <TextInput
+                                    style={styles.bonusField}
+                                    value={pressaoInput}
+                                    onChangeText={setPressaoInput}
+                                    keyboardType="number-pad"
+                                    placeholder="0"
+                                    placeholderTextColor={Colors.muted}
+                                  />
+                                )}
+                              </View>
+                              {damagePreview !== null && (
+                                <Text style={[styles.stepBig, { fontSize: 32, color: Colors.danger }]}>
+                                  {damagePreview}
+                                </Text>
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <Text style={[styles.stepSub, { marginTop: 4 }]}>Sem dado de dano</Text>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* RESULTADO / AGUARDANDO */}
+              {useStep === 'result' && (
+                <View style={styles.stepResult}>
+                  {pendingRequestId ? (
+                    <>
+                      <ActivityIndicator color={Colors.ember} size="large" />
+                      <Text style={styles.waitingText}>Aguardando aprovação do mestre…</Text>
+                    </>
+                  ) : useResult ? (
+                    <>
+                      <Text style={styles.resultLabel}>DANO TOTAL</Text>
+                      <Text style={styles.resultDamage}>{useResult.damage ?? '—'}</Text>
+                      {useResult.costPaid?.length > 0 && (
+                        <Text style={styles.resultCost}>Custo: {useResult.costPaid.map(c => `${c.value} ${c.type}`).join(', ')}</Text>
+                      )}
+                    </>
+                  ) : null}
+                </View>
+              )}
+
+            </View>
+          )}
 
           {error && <Text style={styles.errorText}>{error}</Text>}
 
           {/* Actions */}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} activeOpacity={0.7}>
-              <Text style={styles.cancelText}>{useResult ? 'FECHAR' : 'CANCELAR'}</Text>
+              <Text style={styles.cancelText}>{useStep === 'result' ? 'FECHAR' : 'CANCELAR'}</Text>
             </TouchableOpacity>
 
             {status === 'disponivel' && (
@@ -629,7 +688,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             )}
 
             {/* Passo 1: alvo → acerto (chama useSkill ao avançar) */}
-            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (
+            {activeSlot && (cooldown === 0 || usageStarted) && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnUse, (!selectedTarget || useLoading) && styles.btnDisabled]}
                 onPress={handleAdvanceToHit}
@@ -644,7 +703,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             )}
 
             {/* Passo 2: hit → errou debita custo, acertou vai para dano */}
-            {activeSlot && cooldown === 0 && useResult && !skill.isPassive && hasCombat && useStep === 'hit' && (
+            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && hasCombat && useStep === 'hit' && (
               <>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: Colors.danger }]}
@@ -664,33 +723,35 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               </>
             )}
 
-            {/* Passo 3: solicitar dano (em combate) ou usar direto (sem combate) */}
-            {activeSlot && cooldown === 0 && !skill.isPassive && hasCombat && useStep === 'damage' && useResult && !pendingRequestId && (
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.actionBtnUse, applyingDmg && styles.btnDisabled]}
-                onPress={handleRequestDamage}
-                disabled={applyingDmg}
-                activeOpacity={0.7}
-              >
-                {applyingDmg
-                  ? <ActivityIndicator size="small" color={Colors.text} />
-                  : <Text style={styles.actionBtnText}>SOLICITAR DANO →</Text>
-                }
-              </TouchableOpacity>
+            {/* Passo 3: dano → solicitar dano ou usar sem combate */}
+            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && useStep === 'damage' && (
+              hasCombat && selectedTarget ? (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnUse, applyingDmg && styles.btnDisabled]}
+                  onPress={handleRequestDamage}
+                  disabled={applyingDmg}
+                  activeOpacity={0.7}
+                >
+                  {applyingDmg
+                    ? <ActivityIndicator size="small" color={Colors.text} />
+                    : <Text style={styles.actionBtnText}>SOLICITAR DANO →</Text>
+                  }
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.actionBtnUse, (useLoading || (!hasCombat && usageStarted)) && styles.btnDisabled]}
+                  onPress={!hasCombat ? handleUseSkillNoCombat : handleUseSkillNoCombat}
+                  disabled={useLoading || (!hasCombat && usageStarted)}
+                  activeOpacity={0.7}
+                >
+                  {useLoading
+                    ? <ActivityIndicator size="small" color={Colors.text} />
+                    : <Text style={styles.actionBtnText}>USAR HABILIDADE</Text>
+                  }
+                </TouchableOpacity>
+              )
             )}
-            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && !hasCombat && (
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.actionBtnUse, useLoading && styles.btnDisabled]}
-                onPress={handleUseSkillNoCombat}
-                disabled={useLoading}
-                activeOpacity={0.7}
-              >
-                {useLoading
-                  ? <ActivityIndicator size="small" color={Colors.text} />
-                  : <Text style={styles.actionBtnText}>USAR HABILIDADE</Text>
-                }
-              </TouchableOpacity>
-            )}
+
           </View>
 
         </View>
@@ -703,7 +764,8 @@ const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   card: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 4, padding: 20, width: 420, maxWidth: '100%', maxHeight: '92%', gap: 12,
+    borderRadius: 4, padding: 16, width: 420, maxWidth: '100%', maxHeight: '92%', gap: 10,
+    overflow: 'hidden',
   },
 
   header:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
@@ -716,7 +778,7 @@ const styles = StyleSheet.create({
   closeBtn:   { fontSize: 16, color: Colors.muted },
 
   divider: { height: 1, backgroundColor: Colors.border },
-  scroll:  { maxHeight: 340 },
+  scroll:  { maxHeight: 340, flexShrink: 1 },
 
   descricao: { fontFamily: Fonts.body, fontSize: 14, color: Colors.text, lineHeight: 20, marginBottom: 14 },
 
@@ -812,6 +874,38 @@ const styles = StyleSheet.create({
   waitingText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic' },
   numPadRow:    { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   numPadResult: { flex: 1, gap: 4, justifyContent: 'flex-start' },
+  stepsContainer: { gap: 8 },
+  stepCol:      { gap: 8 },
+  bonusRow:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bonusLabel:   { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
+  bonusField:   {
+    width: 52, height: 30, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 3, backgroundColor: Colors.surface,
+    fontFamily: Fonts.title, fontSize: 15, color: Colors.text, textAlign: 'center',
+    paddingVertical: 0,
+  },
+  bonusFieldDisplay: {
+    lineHeight: 30, borderColor: Colors.ember,
+  },
+  padModeBtn: {
+    paddingHorizontal: 6, paddingVertical: 3,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 3,
+    backgroundColor: Colors.surface,
+  },
+  padModeBtnActive: { borderColor: Colors.ember, backgroundColor: 'rgba(251,146,60,0.12)' },
+  padModeBtnText:   { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
+  padModeBtnTextActive: { color: Colors.ember },
+  stepInline:   { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  stepSide:     { flex: 1, gap: 4, justifyContent: 'center' },
+  stepBig:      { fontFamily: Fonts.title, fontSize: 24, color: Colors.text },
+  stepSub:      { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted },
+  stepResult:   { alignItems: 'center', gap: 6, paddingVertical: 8 },
+  targetRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  targetBtnCompact: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 3,
+  },
   stepLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 4 },
   skipLink:  { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, textDecorationLine: 'underline', marginTop: 6, alignSelf: 'flex-end' },
   entityHpDot: { backgroundColor: Colors.tealBright },

@@ -7,11 +7,11 @@ interface Props {
   maxLength?: number;
 }
 
-const KEYS = ['1','2','3','4','5','6','7','8','9','⌫','0',''];
+const KEYS = ['1','2','3','4','5','6','7','8','9','←','0',''];
 
 export function NumPad({ value, onChange, maxLength = 3 }: Props) {
   function press(key: string) {
-    if (key === '⌫') {
+    if (key === '←') {
       onChange(value.slice(0, -1));
     } else if (key === '') {
       return;
@@ -65,11 +65,11 @@ const styles = StyleSheet.create({
   },
   keyText: {
     fontFamily: Fonts.title,
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.text,
   },
   keyBackText: {
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.muted,
   },
 });
