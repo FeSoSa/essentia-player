@@ -5,7 +5,7 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getImages, getCollectiveBars } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getImages, getCollectiveBars, getTurnState } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
 import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar } from '@/types';
@@ -20,7 +20,9 @@ export default function GameScreen() {
   const setImages = useGameStore((s) => s.setImages);
   const setFastAction = useGameStore((s) => s.setFastAction);
   const setInitiative = useGameStore((s) => s.setInitiative);
+  const setTurnCount = useGameStore((s) => s.setTurnCount);
   const incrementTurn = useGameStore((s) => s.incrementTurn);
+  const setDamageResult = useGameStore((s) => s.setDamageResult);
   const setEnemies = useGameStore((s) => s.setEnemies);
   const setBosses = useGameStore((s) => s.setBosses);
   const setCollectiveBars = useGameStore((s) => s.setCollectiveBars);
@@ -116,6 +118,11 @@ export default function GameScreen() {
         setSobrecargaResult(JSON.parse(msg.body));
       });
 
+      stomp.subscribe(`/topic/player/${playerId}/damage-result`, (msg) => {
+        if (!mounted) return;
+        setDamageResult(JSON.parse(msg.body));
+      });
+
       // Fetch skill tree, essencias catalog, and current combat state
       try {
         const [tree, essencias, enemies, bosses, imgs, colBars] = await Promise.all([
@@ -136,6 +143,17 @@ export default function GameScreen() {
         }
       } catch {
         // non-critical — screens will show empty states
+      }
+
+      // Restaura iniciativa e contador de turnos (separado para não bloquear os outros dados)
+      try {
+        const turnState = await getTurnState();
+        if (mounted && turnState.initiative.length > 0) {
+          setInitiative(turnState.initiative);
+          setTurnCount(turnState.totalTurns);
+        }
+      } catch {
+        // non-critical
       }
     }
 

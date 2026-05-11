@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar } from '@/types';
+import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, DamageResultNotification } from '@/types';
 
 interface GameStore {
   activeTab: TabId;
@@ -20,7 +20,10 @@ interface GameStore {
   clearNewImage: () => void;
   setFastAction: (fa: FastAction | null) => void;
   setInitiative: (entries: InitiativeEntry[]) => void;
+  setTurnCount: (count: number) => void;
   incrementTurn: () => void;
+  damageResult: DamageResultNotification | null;
+  setDamageResult: (r: DamageResultNotification | null) => void;
   setEnemies: (enemies: EnemyInstance[]) => void;
   setBosses: (bosses: BossInstance[]) => void;
 }
@@ -71,10 +74,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setInitiative: (entries) => set({
     initiative: entries,
-    turnCount: entries.length === 0 ? 0 : get().turnCount,
+    turnCount: 0,
   }),
 
+  setTurnCount: (count: number) => set({ turnCount: count }),
   incrementTurn: () => set((state) => ({ turnCount: state.turnCount + 1 })),
+  damageResult: null,
+  setDamageResult: (damageResult) => set({ damageResult }),
   setEnemies: (enemies) => set({ enemies }),
   setBosses: (bosses) => set({ bosses }),
 }));

@@ -73,16 +73,19 @@ export async function useSkill(
   slotId: string,
   options: { diceRoll?: number; targetId?: string; targetType?: 'enemy' | 'boss' } = {}
 ): Promise<DamageResult> {
-  const res = await api.post<DamageResult>(`/api/players/${playerId}/use-skill`, { slotId, ...options });
+  const res = await api.post<DamageResult>(`/api/players/${playerId}/use-skill`, {
+    slotId,
+    diceRoll: options.diceRoll,
+  });
   return res.data;
 }
 
 export async function applyEnemyDamage(instanceId: string, damage: number): Promise<void> {
-  await api.post(`/api/combat/enemies/${instanceId}/damage`, { damage });
+  await api.put(`/api/combat/enemies/${instanceId}/hp`, { delta: -damage });
 }
 
 export async function applyBossDamage(instanceId: string, damage: number): Promise<void> {
-  await api.post(`/api/combat/bosses/${instanceId}/damage`, { damage });
+  await api.put(`/api/combat/bosses/${instanceId}/hp`, { delta: -damage });
 }
 
 export async function unlockSkill(playerId: string, skillId: string): Promise<void> {
@@ -116,6 +119,25 @@ export async function voteFastAction(playerId: string, optionId: string): Promis
   await api.post('/api/fast-action/vote', { playerId, optionId });
 }
 
+export async function skillMiss(playerId: string, costs: Record<string, number>): Promise<Player> {
+  const res = await api.post<Player>(`/api/players/${playerId}/skill-miss`, costs);
+  return res.data;
+}
+
+export async function requestDamage(
+  playerId: string,
+  opts: {
+    requestId: string;
+    targetId: string;
+    targetType: 'enemy' | 'boss';
+    targetName: string;
+    damage: number;
+    costs?: Record<string, number>;
+  }
+): Promise<void> {
+  await api.post(`/api/players/${playerId}/damage-request`, opts);
+}
+
 export async function requestSobrecarga(playerId: string, nivel: number): Promise<void> {
   await api.post(`/api/players/${playerId}/sobrecarga/request`, { nivel });
 }
@@ -137,6 +159,11 @@ export async function getCombatEnemies(): Promise<EnemyInstance[]> {
 
 export async function getCombatBosses(): Promise<BossInstance[]> {
   const res = await api.get<BossInstance[]>('/api/combat/bosses');
+  return res.data;
+}
+
+export async function getTurnState(): Promise<{ initiative: import('@/types').InitiativeEntry[]; totalTurns: number }> {
+  const res = await api.get('/api/master/turn-state');
   return res.data;
 }
 

@@ -33,15 +33,15 @@ export function GameLayout() {
       {
         // top: 0 pois estamos ocultando a status bar
         // sides: respeita notch/punch-hole/bordas arredondadas
-        paddingTop: insets.top,
-        paddingBottom: insets.bottom,
+        paddingTop: Math.max(insets.top, 8),
+        paddingBottom: Math.max(insets.bottom, 8),
         paddingLeft: insets.left,
-        paddingRight: insets.right,
+        paddingRight: Math.max(insets.right, 8),
       },
     ]}>
       <Sidebar />
       <View style={styles.content}>{screen}</View>
-      {fastAction?.active && activeTab !== 'geral' && <FastActionOverlay />}
+      {fastAction?.active && <FastActionOverlay />}
     </View>
   );
 }

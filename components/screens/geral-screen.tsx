@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, TextInput, StyleSheet } from 'react-native';
+import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, weaponDamageFormula, type ArmorWeight } from '@/lib/rules';
 import { ResourceBar } from '@/components/ui/resource-bar';
 import { SobrecargaModal } from '@/components/ui/sobrecarga-modal';
+import { NumPad } from '@/components/ui/num-pad';
 import { SkillInfoModal } from '@/components/ui/skill-info-modal';
 import { GameIcon } from '@/components/ui/game-icon';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
-import { adjustHp, adjustFlow, adjustEther, adjustPressao, voteFastAction, executeDesvio } from '@/lib/api';
+import { adjustHp, adjustFlow, adjustEther, adjustPressao, executeDesvio } from '@/lib/api';
 import { SOBRECARGA_LEVELS, type Essencia, type EssenciaObtida, type StatusEffect, type Slot, type SkillTreeEntry } from '@/types';
 
 const ATTR_LABELS: Record<string, string> = {
@@ -62,14 +63,12 @@ export function GeralScreen() {
   const initiative = useGameStore((s) => s.initiative);
   const collectiveBars = useGameStore((s) => s.collectiveBars);
   const turnCount = useGameStore((s) => s.turnCount);
-  const fastAction = useGameStore((s) => s.fastAction);
 
   const [selectedEssencia, setSelectedEssencia] = useState<(EssenciaObtida & { catalog?: Essencia }) | null>(null);
   const [selectedEfeito, setSelectedEfeito] = useState<StatusEffect | null>(null);
   const [skillModalSlot,  setSkillModalSlot]  = useState<Slot | null>(null);
   const [skillModalSkill, setSkillModalSkill] = useState<SkillTreeEntry | null>(null);
   const [sobrecargaOpen, setSobrecargaOpen] = useState(false);
-  const [faLoading, setFaLoading] = useState(false);
   const [desvioModalOpen, setDesvioModalOpen] = useState(false);
   const [desvioInput,     setDesvioInput]     = useState('');
   const [desvioLoading,   setDesvioLoading]   = useState(false);
@@ -84,10 +83,11 @@ export function GeralScreen() {
   const bosses = useGameStore((s) => s.bosses);
 
   const skillMap = new Map(skillTree.map((s) => [s.skillId, s]));
-  const combatActive = enemies.length > 0 || bosses.length > 0 || initiative.length > 0;
+  const combatActive = initiative.length > 0;
   const currentPlayer = initiative.length > 0 ? initiative[turnCount % initiative.length] : null;
 
-  const agiMod = getModifier(player.attributes.agility);
+  const attrs = player.effectiveAttributes ?? player.attributes;
+  const agiMod = getModifier(attrs.agility);
   const initBonus = initiativeBonus(agiMod);
   const armorWeight = getArmorWeight(player.equipment.armor?.armorWeight);
   const canDesviar = combatActive && armorWeight !== 'heavy' && player.desviosRestantes > 0;
@@ -97,7 +97,7 @@ export function GeralScreen() {
     if (isNaN(roll) || roll < 1) return;
     setDesvioLoading(true);
     try {
-      const bonus = armorWeight === 'none' ? getModifier(player.attributes.agility) : 0;
+      const bonus = armorWeight === 'none' ? getModifier(attrs.agility) : 0;
       const total = roll + bonus;
       const updated = await executeDesvio(player.id);
       setPlayer(updated);
@@ -106,21 +106,6 @@ export function GeralScreen() {
       setDesvioInput('');
     } catch { /* silent */ }
     finally { setDesvioLoading(false); }
-  }
-
-  const faVoted = (fastAction?.lockedPlayers ?? []).includes(player.id);
-  const faTakenOptions = new Set(Object.values(fastAction?.answers ?? {}));
-
-  async function handleVote(optionId: string) {
-    if (!player.id || faVoted || faLoading || faTakenOptions.has(optionId)) return;
-    setFaLoading(true);
-    try {
-      await voteFastAction(player.id, optionId);
-    } catch {
-      // silent
-    } finally {
-      setFaLoading(false);
-    }
   }
 
   return (
@@ -133,11 +118,21 @@ export function GeralScreen() {
         {/* Portrait — edge to edge, sem padding */}
         <View style={styles.portraitWrap}>
           {player.char.portraitUrl ? (
-            <Image
-              source={{ uri: normalizePortraitUrl(player.char.portraitUrl), headers: { Referer: '' } }}
-              style={styles.portraitImage}
-              resizeMode="cover"
-            />
+            <>
+              {/* Fundo borrado para preencher sobras quando a imagem é mais estreita */}
+              <Image
+                source={{ uri: normalizePortraitUrl(player.char.portraitUrl), headers: { Referer: '' } }}
+                style={[styles.portraitImage, { position: 'absolute', opacity: 0.5 }]}
+                resizeMode="cover"
+                blurRadius={12}
+              />
+              {/* Imagem principal — contain para não cortar */}
+              <Image
+                source={{ uri: normalizePortraitUrl(player.char.portraitUrl), headers: { Referer: '' } }}
+                style={styles.portraitImage}
+                resizeMode="contain"
+              />
+            </>
           ) : (
             <View style={styles.portraitPlaceholder}>
               <Text style={styles.portraitInitial}>
@@ -149,7 +144,7 @@ export function GeralScreen() {
           <View style={styles.portraitOverlay}>
             <Text style={styles.charName}>{player.char.name}</Text>
             <Text style={styles.charSub}>
-              {player.char.race} · {player.char.classe}
+              {player.char.race} · {player.char.skillClass}
             </Text>
           </View>
         </View>
@@ -179,7 +174,7 @@ export function GeralScreen() {
           {/* Attributes grid */}
           <View style={styles.attrGrid}>
             {ATTR_ORDER.map((key) => {
-              const base = (player.attributes as any)[key] as number;
+              const base = ((player.effectiveAttributes ?? player.attributes) as any)[key] as number;
               const displayed = base + sobrecargaBonus;
               return (
                 <View key={key} style={[styles.attrCell, sobrecargaAtiva && key !== 'defense' && styles.attrCellOverload]}>
@@ -224,7 +219,7 @@ export function GeralScreen() {
             onIncrement={() => adjustEther(player.id, 1)}
           />
         )}
-        {player.char.classe === 'Intenso' && player.pressao && (
+        {player.pressao && (
           <ResourceBar
             label="PRESSÃO"
             current={player.pressao.current}
@@ -251,8 +246,8 @@ export function GeralScreen() {
             </Text>
           </View>
 
-          {/* Inimigos e bosses ativos */}
-          {(enemies.length > 0 || bosses.length > 0) && (
+          {/* Inimigos e bosses ativos — só quando há turnos */}
+          {combatActive && (enemies.length > 0 || bosses.length > 0) && (
             <View style={styles.entityList}>
               {enemies.map((e) => (
                 <View key={e.instanceId} style={styles.entityRow}>
@@ -266,7 +261,9 @@ export function GeralScreen() {
                 return (
                   <View key={b.instanceId} style={styles.entityRow}>
                     <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
-                    <Text style={styles.entityName} numberOfLines={1}>{b.name}</Text>
+                    <Text style={styles.entityName} numberOfLines={1}>
+                      {b.currentPhase > 0 && phase?.name ? `${b.name} — ${phase.name}` : b.name}
+                    </Text>
                     <View style={[styles.entityHpDot, { backgroundColor: hpColor(b.hpCurrent, phase?.hpMax ?? 1) }]} />
                   </View>
                 );
@@ -302,36 +299,6 @@ export function GeralScreen() {
             );
           })()}
 
-          <View style={[styles.faPanel, !fastAction?.active && styles.faPanelInactive]}>
-            <Text style={styles.faLabel}>AÇÃO RÁPIDA</Text>
-            {fastAction?.active ? (
-              <>
-                <Text style={styles.faTitle}>{fastAction.title}</Text>
-                {faVoted ? (
-                  <Text style={styles.faVoted}>Voto registrado</Text>
-                ) : (
-                  <View style={styles.faOptions}>
-                    {fastAction.options.map((opt) => {
-                      const taken = faTakenOptions.has(opt.id);
-                      return (
-                        <TouchableOpacity
-                          key={opt.id}
-                          style={[styles.faCircle, { backgroundColor: opt.color }, taken && { opacity: 0.3 }]}
-                          onPress={() => handleVote(opt.id)}
-                          disabled={faLoading || taken}
-                          activeOpacity={0.75}
-                        >
-                          {faLoading && !taken && <ActivityIndicator color="#fff" size="small" />}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                )}
-              </>
-            ) : (
-              <Text style={styles.faInactive}>—</Text>
-            )}
-          </View>
         </ScrollView>
       </View>
 
@@ -580,38 +547,30 @@ export function GeralScreen() {
             <Text style={desvioStyles.title}>DESVIO</Text>
 
             <Text style={desvioStyles.hint}>
-              {armorWeight === 'none' && `1d20 + AGI ${formatMod(getModifier(player.attributes.agility))} vs 12`}
+              {armorWeight === 'none' && `1d20 + AGI ${formatMod(getModifier(attrs.agility))} vs 12`}
               {armorWeight === 'light' && '1d20 vs 12 (sem bônus)'}
               {armorWeight === 'medium' && '1d20 com desvantagem vs 12 — insira o menor dos dois dados'}
             </Text>
 
-            <TextInput
-              style={desvioStyles.input}
-              value={desvioInput}
-              onChangeText={setDesvioInput}
-              keyboardType="numeric"
-              placeholder="Valor do dado"
-              placeholderTextColor={Colors.border}
-              maxLength={2}
-              autoFocus
-            />
-
-            {desvioInput !== '' && !isNaN(parseInt(desvioInput)) && (
-              <View style={desvioStyles.previewRow}>
-                <Text style={desvioStyles.previewText}>
-                  {desvioInput}
-                  {armorWeight === 'none' && ` ${formatMod(getModifier(player.attributes.agility))}`}
-                  {' = '}
-                  <Text style={{
-                    color: (parseInt(desvioInput) + (armorWeight === 'none' ? getModifier(player.attributes.agility) : 0)) >= 12
-                      ? Colors.tealBright : Colors.danger,
-                  }}>
-                    {parseInt(desvioInput) + (armorWeight === 'none' ? getModifier(player.attributes.agility) : 0)}
+            <View style={desvioStyles.numPadRow}>
+              <NumPad value={desvioInput} onChange={setDesvioInput} maxLength={2} />
+              <View style={desvioStyles.numPadPreview}>
+                <Text style={desvioStyles.numPadValue}>{desvioInput || '—'}</Text>
+                {desvioInput !== '' && !isNaN(parseInt(desvioInput)) && (
+                  <Text style={desvioStyles.previewText}>
+                    {armorWeight === 'none' && `${formatMod(getModifier(attrs.agility))} = `}
+                    <Text style={{
+                      color: (parseInt(desvioInput) + (armorWeight === 'none' ? getModifier(attrs.agility) : 0)) >= 12
+                        ? Colors.tealBright : Colors.danger,
+                      fontWeight: 'bold',
+                    }}>
+                      {parseInt(desvioInput) + (armorWeight === 'none' ? getModifier(attrs.agility) : 0)}
+                    </Text>
+                    {' vs 12'}
                   </Text>
-                  {' vs 12'}
-                </Text>
+                )}
               </View>
-            )}
+            </View>
 
             <View style={desvioStyles.actions}>
               <TouchableOpacity style={desvioStyles.cancelBtn} onPress={() => { setDesvioModalOpen(false); setDesvioInput(''); }}>
@@ -1126,8 +1085,11 @@ const desvioStyles = StyleSheet.create({
     backgroundColor: Colors.surface, fontFamily: Fonts.title, fontSize: 28,
     color: Colors.ember, textAlign: 'center',
   },
-  previewRow:  { alignItems: 'center' },
-  previewText: { fontFamily: Fonts.title, fontSize: 16, color: Colors.text },
+  numPadRow:     { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  numPadPreview: { flex: 1, gap: 6, justifyContent: 'center' },
+  numPadValue:   { fontFamily: Fonts.title, fontSize: 32, color: Colors.ember },
+  previewRow:    { alignItems: 'center' },
+  previewText:   { fontFamily: Fonts.title, fontSize: 16, color: Colors.text },
   actions:    { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
   cancelBtn:  { paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 2 },
   cancelText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 2 },

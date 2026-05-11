@@ -169,6 +169,7 @@ export interface Player {
   pressao?: Vital;
   exp: Exp;
   attributes: Attributes;
+  effectiveAttributes?: Attributes;
   essenciasObtidas: EssenciaObtida[];
   slots: Slot[];
   equipment: Equipment;
@@ -181,6 +182,11 @@ export interface Player {
   customBars?: CustomBar[];
   sobrecargaAtiva?: boolean;
   sobrecargaNivel?: number;
+}
+
+export interface DamageResultNotification {
+  requestId: string;
+  approved: boolean;
 }
 
 export interface SobrecargaLevel {
@@ -222,6 +228,10 @@ export interface SkillTreeEntry {
     custoAumento: number;  // ex: 0.24 = +24%
     reducaoCusto: number;  // ex: 0.16 = -16%
   };
+  danoFormula?: string;   // ex: "4 + 2d6 + INT"
+  danoBase?: number;      // valor fixo adicionado ao dano antes do dado
+  cooldownTurns?: number; // turnos de cooldown após uso
+  skillType?: string;     // "class" | "weapon" | "essencia" | "mestre"
 }
 
 // Game state types (from WebSocket topics)

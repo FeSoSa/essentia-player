@@ -53,13 +53,21 @@ export function InventarioScreen() {
       return;
     }
     setEquipError(null);
-    const updated = await equipItem(player.id, item.id);
-    setPlayer(updated);
+    try {
+      const updated = await equipItem(player.id, item.id);
+      setPlayer(updated);
+    } catch (e: any) {
+      setEquipError(e?.response?.data?.message ?? 'Erro ao equipar item.');
+    }
   }
 
   async function handleUnequip(slotKey: EquipSlotKey) {
-    const updated = await unequipItem(player.id, slotKey);
-    setPlayer(updated);
+    try {
+      const updated = await unequipItem(player.id, slotKey);
+      setPlayer(updated);
+    } catch (e: any) {
+      setEquipError(e?.response?.data?.message ?? 'Erro ao desequipar item.');
+    }
   }
 
   return (
@@ -123,6 +131,16 @@ export function InventarioScreen() {
                           {weaponDamageFormula(equipped as WeaponEquip)}
                         </Text>
                       )}
+                      {(() => {
+                        const bonus = (equipped as any).attributeBonus as Record<string, number> | undefined;
+                        const entries = Object.entries(bonus ?? {}).filter(([, v]) => v !== 0);
+                        if (!entries.length) return null;
+                        return (
+                          <Text style={styles.attrBonusText}>
+                            {entries.map(([k, v]) => `${k.slice(0,3).toUpperCase()} ${v > 0 ? '+' : ''}${v}`).join('  ')}
+                          </Text>
+                        );
+                      })()}
                     </>
                   ) : (
                     <>
@@ -281,6 +299,7 @@ const styles = StyleSheet.create({
     borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1,
   },
   twoHandText: { fontFamily: Fonts.title, fontSize: 8, color: Colors.ember, letterSpacing: 1 },
+  attrBonusText: { fontFamily: Fonts.title, fontSize: 9, color: Colors.tealBright, letterSpacing: 0.5 },
   errorBanner: {
     backgroundColor: 'rgba(239,68,68,0.12)', borderBottomWidth: 1,
     borderBottomColor: Colors.danger, paddingHorizontal: 16, paddingVertical: 7,

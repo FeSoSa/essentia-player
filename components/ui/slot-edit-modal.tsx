@@ -33,10 +33,12 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
   const equippedIds  = new Set(player.slots.filter((s) => s.skillId).map((s) => s.skillId!));
   const currentSkill = slot?.skillId ? skillTree.find((s) => s.skillId === slot.skillId) : null;
 
-  // Habilidades disponíveis: desbloqueadas e não em outro slot
-  const allAvailable = skillTree.filter(
-    (s) => s.unlocked && s.skillId !== slot?.skillId && !equippedIds.has(s.skillId)
-  );
+  // Habilidades disponíveis: desbloqueadas, não em outro slot, e com tipo compatível com o slot
+  const allAvailable = skillTree.filter((s) => {
+    if (!s.unlocked || s.skillId === slot?.skillId || equippedIds.has(s.skillId)) return false;
+    if (slot?.type === 'class') return s.skillType === 'class';
+    return true; // free e human_bonus aceitam qualquer skill
+  });
 
   const categories = ['todas', ...Array.from(new Set(allAvailable.map((s) => s.categoria).filter(Boolean)))];
 

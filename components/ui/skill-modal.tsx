@@ -55,7 +55,16 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
 
   const skillMod = skill ? getSkillMod(skill.categoria ?? '', player.attributes) : null;
   const diceFormula = skill ? parseDice(skill.descricao) : null;
-  const damagePreview = validDice && skillMod ? diceValue + skillMod.value : validDice ? diceValue : null;
+  const maestriaBonus = skill?.maestria?.bonusDano ?? 0;
+  const danoBase = skill?.danoBase ?? 0;
+  const baseCalc = validDice && skillMod
+    ? diceValue + skillMod.value + danoBase
+    : validDice
+    ? diceValue + danoBase
+    : null;
+  const damagePreview = baseCalc !== null && maestriaBonus > 0
+    ? Math.round(baseCalc * (1 + maestriaBonus))
+    : baseCalc;
 
   function handleClose() {
     setDiceInput('');
@@ -157,8 +166,8 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
               {/* Dice input */}
               <View style={styles.diceSection}>
                 <Text style={styles.fieldLabel}>VALOR DO DADO</Text>
-                {diceFormula && (
-                  <Text style={styles.formulaHint}>Fórmula: {diceFormula}</Text>
+                {(skill?.danoFormula || diceFormula) && (
+                  <Text style={styles.formulaHint}>⚔ {skill?.danoFormula ?? diceFormula}</Text>
                 )}
                 <View style={styles.diceRow}>
                   <TextInput
@@ -177,6 +186,9 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
                   )}
                   {damagePreview !== null && (
                     <Text style={styles.previewText}>= {damagePreview}</Text>
+                  )}
+                  {maestriaBonus > 0 && (
+                    <Text style={styles.modText}>+{Math.round(maestriaBonus * 100)}% maestria</Text>
                   )}
                 </View>
               </View>
@@ -222,7 +234,11 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
                           activeOpacity={0.7}
                         >
                           <Text style={styles.targetIcon}>{b.icon || '★'}</Text>
-                          <Text style={styles.targetName} numberOfLines={1}>{b.name} (Boss)</Text>
+                          <Text style={styles.targetName} numberOfLines={1}>
+                            {b.currentPhase > 0 && b.phases[b.currentPhase]?.name
+                              ? `${b.name} — ${b.phases[b.currentPhase]!.name}`
+                              : b.name} (Boss)
+                          </Text>
                           <Text style={styles.targetHp}>{b.hpCurrent}/{phase?.hpMax ?? '?'}</Text>
                         </TouchableOpacity>
                       );
@@ -262,10 +278,10 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   card: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.ember,
-    borderRadius: 4, padding: 24, width: 400, maxHeight: 560, gap: 12,
+    borderRadius: 4, padding: 24, width: 400, maxWidth: '100%', maxHeight: '92%', gap: 12,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   nome: { fontFamily: Fonts.title, fontSize: 18, color: Colors.text, flex: 1, letterSpacing: 1 },

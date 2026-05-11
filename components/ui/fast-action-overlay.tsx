@@ -18,8 +18,11 @@ export function FastActionOverlay() {
 
   if (!fastAction?.active) return null;
 
-  const voted = !!playerId && (fastAction.lockedPlayers ?? []).includes(playerId);
-  const takenOptions = new Set(Object.values(fastAction.answers ?? {}));
+  const voted = !!fastAction.lockOnePerPlayer &&
+    !!playerId && (fastAction.lockedPlayers ?? []).includes(playerId);
+  const takenOptions = fastAction.lockOnePerPlayer
+    ? new Set(Object.values(fastAction.answers ?? {}))
+    : new Set<string>();
 
   async function handleVote(optionId: string) {
     if (!playerId || voted || loading || takenOptions.has(optionId)) return;

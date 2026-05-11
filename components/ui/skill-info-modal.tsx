@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
   ActivityIndicator, StyleSheet, TextInput,
 } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
+import { NumPad } from '@/components/ui/num-pad';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
-import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, applyEnemyDamage, applyBossDamage } from '@/lib/api';
+import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, skillMiss } from '@/lib/api';
 import { getModifier, formatMod } from '@/lib/rules';
 import type { SkillTreeEntry, Slot, DamageResult, Attributes } from '@/types';
 
@@ -79,11 +80,27 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const [error,         setError]         = useState<string | null>(null);
 
   // Use-skill state
+  const [useStep, setUseStep] = useState<'target' | 'hit' | 'damage'>('target');
+  const [hitInput, setHitInput] = useState('');
   const [diceInput,     setDiceInput]     = useState('');
   const [selectedTarget, setSelectedTarget] = useState<{ id: string; kind: TargetKind } | null>(null);
-  const [useResult,     setUseResult]     = useState<DamageResult | null>(null);
-  const [useLoading,    setUseLoading]    = useState(false);
-  const [applyingDmg,   setApplyingDmg]   = useState(false);
+  const [useResult,       setUseResult]       = useState<DamageResult | null>(null);
+  const [useLoading,      setUseLoading]      = useState(false);
+  const [applyingDmg,     setApplyingDmg]     = useState(false);
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const damageResult = useGameStore((s) => s.damageResult);
+  const setDamageResult = useGameStore((s) => s.setDamageResult);
+
+  // useEffect ANTES do early return — regra dos hooks
+  useEffect(() => {
+    if (!skill) return;
+    if (damageResult && pendingRequestId && damageResult.requestId === pendingRequestId) {
+      setDamageResult(null);
+      setPendingRequestId(null);
+      if (damageResult.approved) onClose();
+      else setError('Dano rejeitado pelo mestre.');
+    }
+  }, [damageResult]);
 
   if (!skill) return null;
 
@@ -98,50 +115,121 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const diceValue    = parseInt(diceInput, 10);
   const validDice    = !isNaN(diceValue) && diceValue > 0;
   const skillMod     = skill ? getSkillMod(skill.categoria ?? '', player.attributes) : null;
+  const agiMod       = getModifier((player.effectiveAttributes ?? player.attributes).agility);
+  const hitValue     = parseInt(hitInput, 10);
+  const validHit     = !isNaN(hitValue) && hitValue >= 1;
+  const hitTotal     = validHit ? hitValue + agiMod : null;
   const diceFormula  = skill ? parseDice(skill.descricao) : null;
-  const basePreview  = validDice && skillMod ? diceValue + skillMod.value : validDice ? diceValue : null;
+  const danoBase = skill?.danoBase ?? 0;
+  const basePreview  = validDice && skillMod
+    ? diceValue + skillMod.value + danoBase
+    : validDice
+    ? diceValue + danoBase
+    : null;
+  const maestriaBonus = maestria?.bonusDano ?? 0;
+  const damagePreview = basePreview !== null && maestriaBonus > 0
+    ? Math.round(basePreview * (1 + maestriaBonus))
+    : basePreview;
   const hasCombat    = enemies.length > 0 || bosses.length > 0;
 
   function handleClose() {
     setError(null);
+    setUseStep('target');
+    setHitInput('');
     setDiceInput('');
     setSelectedTarget(null);
     setUseResult(null);
     onClose();
   }
 
-  async function handleUseSkill() {
-    if (!activeSlot || !player.id) return;
+  // Chamado ao avançar para o acerto — seta cooldown e obtém custo (sem dice roll)
+  async function handleAdvanceToHit() {
+    if (!activeSlot || !player.id || !selectedTarget) return;
     setUseLoading(true);
     setError(null);
     try {
-      const res = await useSkill(player.id, activeSlot.id, {
-        diceRoll: validDice ? diceValue : undefined,
-        targetId: selectedTarget?.id,
-        targetType: selectedTarget?.kind,
-      });
+      const res = await useSkill(player.id, activeSlot.id, {});
       setUseResult(res);
+      setUseStep('hit');
     } catch (err: any) {
-      const msg = err?.response?.data?.message ?? err?.response?.data ?? err?.message;
+      const data = err?.response?.data;
+      const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
+        ?? err?.message
+        ?? 'Erro ao usar habilidade.';
       setError(typeof msg === 'string' ? msg : 'Erro ao usar habilidade.');
     } finally {
       setUseLoading(false);
     }
   }
 
-  async function handleApplyDamage() {
+  // Chamado no passo de dano (sem combate) — chama API normalmente
+  async function handleUseSkillNoCombat() {
+    if (!activeSlot || !player.id) return;
+    setUseLoading(true);
+    setError(null);
+    try {
+      const res = await useSkill(player.id, activeSlot.id, {
+        diceRoll: validDice ? diceValue : undefined,
+      });
+      setUseResult(res);
+    } catch (err: any) {
+      const data = err?.response?.data;
+      const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
+        ?? err?.message
+        ?? 'Erro ao usar habilidade.';
+      setError(typeof msg === 'string' ? msg : 'Erro ao usar habilidade.');
+    } finally {
+      setUseLoading(false);
+    }
+  }
+
+  async function handleMiss() {
+    if (useResult?.costPaid) {
+      const costs = useResult.costPaid.reduce((acc, c) => {
+        if (c.value != null) acc[c.type] = c.value;
+        return acc;
+      }, {} as Record<string, number>);
+      try {
+        const updated = await skillMiss(player.id, costs);
+        setPlayer(updated);
+      } catch { /* silent — custo pode não debitar se não tiver recursos */ }
+    }
+    handleClose();
+  }
+
+  async function handleRequestDamage() {
     if (!useResult || !selectedTarget) return;
     setApplyingDmg(true);
+    setError(null);
+    const reqId = `${player.id}-${Date.now()}`;
     try {
-      if (selectedTarget.kind === 'enemy') await applyEnemyDamage(selectedTarget.id, useResult.damage ?? 0);
-      else await applyBossDamage(selectedTarget.id, useResult.damage ?? 0);
-      handleClose();
-    } catch {
-      setError('Erro ao aplicar dano.');
+      const targetName = selectedTarget.kind === 'enemy'
+        ? (enemies.find((e) => e.instanceId === selectedTarget.id)?.name ?? 'Inimigo')
+        : (bosses.find((b) => b.instanceId === selectedTarget.id)?.name ?? 'Boss');
+      const costs = (useResult.costPaid ?? []).reduce((acc, c) => {
+        if (c.value != null) acc[c.type] = c.value;
+        return acc;
+      }, {} as Record<string, number>);
+      // Usa o dano calculado pelo dado do jogador se disponível; senão, usa o do backend
+      const finalDamage = damagePreview ?? useResult.damage ?? 0;
+      await requestDamage(player.id, {
+        requestId: reqId,
+        targetId: selectedTarget.id,
+        targetType: selectedTarget.kind,
+        targetName,
+        damage: finalDamage,
+        costs,
+      });
+      setPendingRequestId(reqId);
+      setDamageResult(null);
+    } catch (err: any) {
+      const msg = err?.response?.data?.message ?? err?.message;
+      setError(typeof msg === 'string' ? msg : 'Erro ao solicitar dano.');
     } finally {
       setApplyingDmg(false);
     }
   }
+
 
   async function handleUnlock() {
     setUnlocking(true);
@@ -208,14 +296,41 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
 
           <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
 
-            {/* Descrição */}
-            <Text style={styles.descricao}>{skill.descricao}</Text>
+            {/* Descrição — esconde no modo de uso */}
+            {!activeSlot && <Text style={styles.descricao}>{skill.descricao}</Text>}
 
-            {/* Cooldown info */}
+            {/* Cooldown atual (slot em espera) */}
             {cooldown > 0 && (
               <Text style={styles.cooldownText}>
                 Em cooldown: {cooldown} turno{cooldown > 1 ? 's' : ''}
               </Text>
+            )}
+
+            {/* Bloco de detalhes — custo, dano, cooldown base */}
+            {!activeSlot && (
+              <View style={styles.detailsBlock}>
+                {/* Custo */}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>CUSTO</Text>
+                  <Text style={styles.detailValue}>{skill.custo || '—'}</Text>
+                </View>
+                {/* Dano */}
+                {skill.danoFormula && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>DANO</Text>
+                    <Text style={styles.detailValue}>⚔ {skill.danoFormula}</Text>
+                  </View>
+                )}
+                {/* Cooldown base */}
+                {!!skill.cooldownTurns && skill.cooldownTurns > 0 && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>COOLDOWN</Text>
+                    <Text style={styles.detailValue}>
+                      {skill.cooldownTurns} turno{skill.cooldownTurns > 1 ? 's' : ''}
+                    </Text>
+                  </View>
+                )}
+              </View>
             )}
 
             {/* Requisitos — só na aba Habilidades */}
@@ -347,106 +462,134 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               </View>
             )}
 
-            {/* ── Seção de uso (só quando aberta da aba Geral com slot ativo e não passiva) ── */}
-            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && (
+            {/* ── PASSO 1: Escolher alvo ── */}
+            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (
               <View style={styles.useSection}>
+                <Text style={styles.stepLabel}>PASSO 1 — ALVO</Text>
+                {enemies.map((e) => (
+                  <TouchableOpacity
+                    key={e.instanceId}
+                    style={[styles.targetBtn, selectedTarget?.id === e.instanceId && styles.targetBtnSelected]}
+                    onPress={() => setSelectedTarget(selectedTarget?.id === e.instanceId ? null : { id: e.instanceId, kind: 'enemy' })}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.targetIcon}>{e.icon || '⚔'}</Text>
+                    <Text style={styles.targetName} numberOfLines={1}>{e.name}</Text>
+                    <View style={[styles.entityHpDot, { width: 8, height: 8, borderRadius: 4 }]} />
+                    <Text style={styles.targetHp}>{e.hpCurrent}/{e.hpMax}</Text>
+                  </TouchableOpacity>
+                ))}
+                {bosses.map((b) => {
+                  const phase = b.phases[b.currentPhase];
+                  return (
+                    <TouchableOpacity
+                      key={b.instanceId}
+                      style={[styles.targetBtn, selectedTarget?.id === b.instanceId && styles.targetBtnSelected]}
+                      onPress={() => setSelectedTarget(selectedTarget?.id === b.instanceId ? null : { id: b.instanceId, kind: 'boss' })}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.targetIcon}>★</Text>
+                      <Text style={styles.targetName} numberOfLines={1}>
+                        {b.currentPhase > 0 && b.phases[b.currentPhase]?.name
+                          ? `${b.name} — ${b.phases[b.currentPhase]!.name}`
+                          : b.name}
+                      </Text>
+                      <Text style={styles.targetHp}>{b.hpCurrent}/{phase?.hpMax ?? '?'}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity onPress={() => setUseStep('damage')} activeOpacity={0.7}>
+                  <Text style={styles.skipLink}>Sem alvo (buff/área) →</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-                {/* Custo */}
+            {/* ── PASSO 2: Rolagem de acerto ── */}
+            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && hasCombat && useStep === 'hit' && (
+              <View style={styles.useSection}>
+                <Text style={styles.stepLabel}>PASSO 2 — ACERTO</Text>
+                <View style={styles.numPadRow}>
+                  <NumPad value={hitInput} onChange={setHitInput} maxLength={2} />
+                  <View style={styles.numPadResult}>
+                    <View style={styles.diceModWrap}>
+                      <Text style={styles.diceLabel}>1d20</Text>
+                      <Text style={styles.diceResult}>{hitInput || '—'}</Text>
+                    </View>
+                    <Text style={styles.diceLabel}>+ AGI {formatMod(agiMod)}</Text>
+                    {hitTotal !== null && (
+                      <View style={{ marginTop: 6 }}>
+                        <Text style={styles.diceLabel}>TOTAL</Text>
+                        <Text style={[styles.diceResult, { fontSize: 28 }]}>{hitTotal}</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* ── PASSO 3: Dano ── */}
+            {activeSlot && cooldown === 0 && !skill.isPassive && ((hasCombat && useStep === 'damage') || (!hasCombat && !useResult)) && (
+              <View style={styles.useSection}>
+                <Text style={styles.stepLabel}>{hasCombat ? 'PASSO 3 — DANO' : 'USAR HABILIDADE'}</Text>
                 <View style={styles.custoRow}>
                   <Text style={styles.custoLabel}>CUSTO</Text>
                   <Text style={styles.custoValue}>{skill.custo}</Text>
                 </View>
-
-                {/* Dice input + preview */}
-                <View style={styles.diceBlock}>
-                  <View style={styles.diceInputWrap}>
-                    <Text style={styles.diceLabel}>DADO</Text>
-                    <TextInput
-                      style={styles.diceInput}
-                      value={diceInput}
-                      onChangeText={setDiceInput}
-                      keyboardType="numeric"
-                      placeholder="—"
-                      placeholderTextColor={Colors.border}
-                      maxLength={3}
-                    />
-                  </View>
-
-                  {skillMod && (
+                <View style={styles.numPadRow}>
+                  <NumPad value={diceInput} onChange={setDiceInput} maxLength={3} />
+                  <View style={styles.numPadResult}>
+                    {(skill?.danoFormula || diceFormula) && (
+                      <Text style={styles.formulaHint}>⚔ {skill?.danoFormula ?? diceFormula}</Text>
+                    )}
                     <View style={styles.diceModWrap}>
-                      <Text style={styles.diceLabel}>{skillMod.label}</Text>
-                      <Text style={styles.diceModValue}>{formatMod(skillMod.value)}</Text>
+                      <Text style={styles.diceLabel}>DADO</Text>
+                      <Text style={styles.diceResult}>{diceInput || '—'}</Text>
                     </View>
-                  )}
-
-                  {basePreview !== null && (
-                    <View style={styles.diceResultWrap}>
-                      <Text style={styles.diceLabel}>ESTIMADO</Text>
-                      <Text style={styles.diceResult}>{basePreview}</Text>
-                    </View>
-                  )}
-                </View>
-
-                {diceFormula && (
-                  <Text style={styles.formulaHint}>⚔ {diceFormula}</Text>
-                )}
-
-                {hasCombat && (
-                  <View style={styles.targetList}>
-                    {enemies.map((e) => (
-                      <TouchableOpacity
-                        key={e.instanceId}
-                        style={[styles.targetBtn, selectedTarget?.id === e.instanceId && styles.targetBtnSelected]}
-                        onPress={() => setSelectedTarget(selectedTarget?.id === e.instanceId ? null : { id: e.instanceId, kind: 'enemy' })}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.targetIcon}>{e.icon || '⚔'}</Text>
-                        <Text style={styles.targetName} numberOfLines={1}>{e.name}</Text>
-                        <Text style={styles.targetHp}>{e.hpCurrent}/{e.hpMax}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    {bosses.map((b) => {
-                      const phase = b.phases[b.currentPhase];
-                      return (
-                        <TouchableOpacity
-                          key={b.instanceId}
-                          style={[styles.targetBtn, selectedTarget?.id === b.instanceId && styles.targetBtnSelected]}
-                          onPress={() => setSelectedTarget(selectedTarget?.id === b.instanceId ? null : { id: b.instanceId, kind: 'boss' })}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.targetIcon}>★</Text>
-                          <Text style={styles.targetName} numberOfLines={1}>{b.name} (Boss)</Text>
-                          <Text style={styles.targetHp}>{b.hpCurrent}/{phase?.hpMax ?? '?'}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    {skillMod && (
+                      <Text style={styles.diceLabel}>+ {skillMod.label} {formatMod(skillMod.value)}</Text>
+                    )}
+                    {damagePreview !== null && (
+                      <View style={{ marginTop: 6 }}>
+                        <Text style={styles.diceLabel}>ESTIMADO</Text>
+                        <Text style={[styles.diceResult, { fontSize: 28 }]}>{damagePreview}</Text>
+                        {maestriaBonus > 0 && (
+                          <Text style={styles.diceLabel}>+{Math.round(maestriaBonus * 100)}% maestria</Text>
+                        )}
+                      </View>
+                    )}
                   </View>
-                )}
+                </View>
               </View>
             )}
 
-            {/* Resultado do uso */}
+            {/* ── Resultado ── */}
             {useResult && (
               <View style={styles.resultBlock}>
                 <Text style={styles.resultLabel}>DANO TOTAL</Text>
-                <Text style={styles.resultDamage}>{useResult.damage}</Text>
+                <Text style={styles.resultDamage}>{useResult.damage ?? '—'}</Text>
                 {useResult.costPaid && useResult.costPaid.length > 0 && (
                   <Text style={styles.resultCost}>
                     Custo: {useResult.costPaid.map((c) => `${c.value} ${c.type}`).join(', ')}
                   </Text>
                 )}
-                {selectedTarget && (
+                {selectedTarget && !pendingRequestId && (
                   <TouchableOpacity
                     style={[styles.applyBtn, applyingDmg && styles.btnDisabled]}
-                    onPress={handleApplyDamage}
+                    onPress={handleRequestDamage}
                     disabled={applyingDmg}
                     activeOpacity={0.7}
                   >
                     {applyingDmg
                       ? <ActivityIndicator color={Colors.text} size="small" />
-                      : <Text style={styles.applyBtnText}>APLICAR DANO AO ALVO</Text>
+                      : <Text style={styles.applyBtnText}>SOLICITAR DANO AO MESTRE</Text>
                     }
                   </TouchableOpacity>
+                )}
+                {pendingRequestId && (
+                  <View style={styles.waitingBlock}>
+                    <ActivityIndicator color={Colors.ember} size="small" />
+                    <Text style={styles.waitingText}>Aguardando aprovação do mestre…</Text>
+                  </View>
                 )}
               </View>
             )}
@@ -485,10 +628,60 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               </TouchableOpacity>
             )}
 
-            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && (
+            {/* Passo 1: alvo → acerto (chama useSkill ao avançar) */}
+            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionBtnUse, (!selectedTarget || useLoading) && styles.btnDisabled]}
+                onPress={handleAdvanceToHit}
+                disabled={!selectedTarget || useLoading}
+                activeOpacity={0.7}
+              >
+                {useLoading
+                  ? <ActivityIndicator size="small" color={Colors.text} />
+                  : <Text style={styles.actionBtnText}>ROLAR ACERTO →</Text>
+                }
+              </TouchableOpacity>
+            )}
+
+            {/* Passo 2: hit → errou debita custo, acertou vai para dano */}
+            {activeSlot && cooldown === 0 && useResult && !skill.isPassive && hasCombat && useStep === 'hit' && (
+              <>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: Colors.danger }]}
+                  onPress={handleMiss}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.actionBtnText}>ERROU ✗</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, { backgroundColor: '#16a34a' }, !validHit && styles.btnDisabled]}
+                  onPress={() => validHit && setUseStep('damage')}
+                  disabled={!validHit}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.actionBtnText}>ACERTOU ✓</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Passo 3: solicitar dano (em combate) ou usar direto (sem combate) */}
+            {activeSlot && cooldown === 0 && !skill.isPassive && hasCombat && useStep === 'damage' && useResult && !pendingRequestId && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionBtnUse, applyingDmg && styles.btnDisabled]}
+                onPress={handleRequestDamage}
+                disabled={applyingDmg}
+                activeOpacity={0.7}
+              >
+                {applyingDmg
+                  ? <ActivityIndicator size="small" color={Colors.text} />
+                  : <Text style={styles.actionBtnText}>SOLICITAR DANO →</Text>
+                }
+              </TouchableOpacity>
+            )}
+            {activeSlot && cooldown === 0 && !useResult && !skill.isPassive && !hasCombat && (
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnUse, useLoading && styles.btnDisabled]}
-                onPress={handleUseSkill}
+                onPress={handleUseSkillNoCombat}
                 disabled={useLoading}
                 activeOpacity={0.7}
               >
@@ -507,10 +700,10 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'center', alignItems: 'center' },
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   card: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 4, padding: 20, width: 420, maxHeight: 580, gap: 12,
+    borderRadius: 4, padding: 20, width: 420, maxWidth: '100%', maxHeight: '92%', gap: 12,
   },
 
   header:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
@@ -528,6 +721,14 @@ const styles = StyleSheet.create({
   descricao: { fontFamily: Fonts.body, fontSize: 14, color: Colors.text, lineHeight: 20, marginBottom: 14 },
 
   blockLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 6 },
+
+  detailsBlock: {
+    backgroundColor: Colors.surface, borderRadius: 4, padding: 10,
+    gap: 6, marginBottom: 14,
+  },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  detailLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 1.5 },
+  detailValue: { fontFamily: Fonts.body, fontSize: 13, color: Colors.text },
 
   reqBlock: { borderLeftWidth: 2, borderLeftColor: Colors.danger, paddingLeft: 10, marginBottom: 14 },
   reqText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.danger },
@@ -607,7 +808,15 @@ const styles = StyleSheet.create({
   modText:     { fontFamily: Fonts.title, fontSize: 13, color: Colors.muted },
   previewText: { fontFamily: Fonts.title, fontSize: 20, color: Colors.tealBright },
 
-  targetList: { gap: 4 },
+  waitingBlock: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
+  waitingText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic' },
+  numPadRow:    { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
+  numPadResult: { flex: 1, gap: 4, justifyContent: 'flex-start' },
+  stepLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 4 },
+  skipLink:  { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, textDecorationLine: 'underline', marginTop: 6, alignSelf: 'flex-end' },
+  entityHpDot: { backgroundColor: Colors.tealBright },
+  targetList: { gap: 4, marginTop: 8 },
+  targetListLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 2 },
   targetBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingVertical: 6, paddingHorizontal: 10,
