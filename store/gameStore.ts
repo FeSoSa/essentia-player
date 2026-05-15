@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, DamageResultNotification } from '@/types';
+import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, DamageResultNotification, CombatAlly } from '@/types';
 
 interface GameStore {
   activeTab: TabId;
@@ -26,6 +26,8 @@ interface GameStore {
   setDamageResult: (r: DamageResultNotification | null) => void;
   setEnemies: (enemies: EnemyInstance[]) => void;
   setBosses: (bosses: BossInstance[]) => void;
+  allies: CombatAlly[];
+  setAllies: (allies: CombatAlly[]) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -83,4 +85,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setDamageResult: (damageResult) => set({ damageResult }),
   setEnemies: (enemies) => set({ enemies }),
   setBosses: (bosses) => set({ bosses }),
+  allies: [],
+  setAllies: (allies) => set({ allies }),
 }));

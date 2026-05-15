@@ -68,7 +68,9 @@ export function GeralScreen() {
   const [selectedEfeito, setSelectedEfeito] = useState<StatusEffect | null>(null);
   const [skillModalSlot,  setSkillModalSlot]  = useState<Slot | null>(null);
   const [skillModalSkill, setSkillModalSkill] = useState<SkillTreeEntry | null>(null);
-  const [sobrecargaOpen, setSobrecargaOpen] = useState(false);
+  const [sobrecargaOpen,    setSobrecargaOpen]    = useState(false);
+  const [enemyDetailOpen,   setEnemyDetailOpen]   = useState(false);
+  const [selectedEnemy,     setSelectedEnemy]     = useState<{ icon?: string; name: string; type: string; desc?: string } | null>(null);
   const [desvioModalOpen, setDesvioModalOpen] = useState(false);
   const [desvioInput,     setDesvioInput]     = useState('');
   const [desvioLoading,   setDesvioLoading]   = useState(false);
@@ -80,7 +82,8 @@ export function GeralScreen() {
     : 0;
 
   const enemies = useGameStore((s) => s.enemies);
-  const bosses = useGameStore((s) => s.bosses);
+  const bosses  = useGameStore((s) => s.bosses);
+  const allies  = useGameStore((s) => s.allies);
 
   const skillMap = new Map(skillTree.map((s) => [s.skillId, s]));
   const combatActive = initiative.length > 0;
@@ -247,27 +250,43 @@ export function GeralScreen() {
           </View>
 
           {/* Inimigos e bosses ativos — só quando há turnos */}
-          {combatActive && (enemies.length > 0 || bosses.length > 0) && (
+          {combatActive && (enemies.length > 0 || bosses.length > 0 || allies.length > 0) && (
             <View style={styles.entityList}>
               {enemies.map((e) => (
-                <View key={e.instanceId} style={styles.entityRow}>
+                <TouchableOpacity key={e.instanceId} style={styles.entityRow}
+                  onPress={() => { setSelectedEnemy(e); setEnemyDetailOpen(true); }}
+                  activeOpacity={0.7}>
                   <Text style={styles.entityIcon}>{e.icon || '⚔'}</Text>
                   <Text style={styles.entityName} numberOfLines={1}>{e.name}</Text>
                   <View style={[styles.entityHpDot, { backgroundColor: hpColor(e.hpCurrent, e.hpMax) }]} />
-                </View>
+                </TouchableOpacity>
               ))}
               {bosses.map((b) => {
                 const phase = b.phases[b.currentPhase];
                 return (
-                  <View key={b.instanceId} style={styles.entityRow}>
+                  <TouchableOpacity key={b.instanceId} style={styles.entityRow}
+                    onPress={() => { setSelectedEnemy({ icon: b.icon, name: b.name, type: 'Boss' }); setEnemyDetailOpen(true); }}
+                    activeOpacity={0.7}>
                     <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
                     <Text style={styles.entityName} numberOfLines={1}>
                       {b.currentPhase > 0 && phase?.name ? `${b.name} — ${phase.name}` : b.name}
                     </Text>
                     <View style={[styles.entityHpDot, { backgroundColor: hpColor(b.hpCurrent, phase?.hpMax ?? 1) }]} />
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
+              {allies.length > 0 && (enemies.length > 0 || bosses.length > 0) && (
+                <View style={styles.entityDivider} />
+              )}
+              {allies.map((a) => (
+                <TouchableOpacity key={a.id} style={styles.allyRow}
+                  onPress={() => { setSelectedEnemy({ icon: a.icon, name: a.name, type: a.type, desc: a.desc }); setEnemyDetailOpen(true); }}
+                  activeOpacity={0.7}>
+                  <Text style={styles.entityIcon}>{a.icon || '🛡️'}</Text>
+                  <Text style={styles.allyName} numberOfLines={1}>{a.name}</Text>
+                  <View style={[styles.entityHpDot, { backgroundColor: hpColor(a.hpCurrent, a.hpMax) }]} />
+                </TouchableOpacity>
+              ))}
             </View>
           )}
 
@@ -593,6 +612,25 @@ export function GeralScreen() {
 
       <SobrecargaModal visible={sobrecargaOpen} onClose={() => setSobrecargaOpen(false)} />
 
+      <Modal transparent animationType="fade" visible={enemyDetailOpen} onRequestClose={() => setEnemyDetailOpen(false)}>
+        <TouchableOpacity style={styles.enemyDetailOverlay} activeOpacity={1} onPress={() => setEnemyDetailOpen(false)}>
+          <View style={styles.enemyDetailCard}>
+            {selectedEnemy && (
+              <>
+                <Text style={styles.enemyDetailIcon}>{selectedEnemy.icon || '⚔'}</Text>
+                <Text style={styles.enemyDetailName}>{selectedEnemy.name}</Text>
+                {!!selectedEnemy.type && (
+                  <Text style={styles.enemyDetailType}>{selectedEnemy.type}</Text>
+                )}
+                <Text style={selectedEnemy.desc ? styles.enemyDetailDesc : styles.enemyDetailDescMuted}>
+                  {selectedEnemy.desc || 'Sem descrição.'}
+                </Text>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <SkillInfoModal
         visible={!!(skillModalSlot && skillModalSkill)}
         skill={skillModalSkill}
@@ -871,6 +909,23 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  entityDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginVertical: 2,
+  },
+  allyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    opacity: 0.9,
+  },
+  allyName: {
+    flex: 1,
+    fontFamily: Fonts.body,
+    fontSize: 9,
+    color: '#4ade80',
   },
   roundPill: {
     backgroundColor: Colors.surface,
@@ -1276,5 +1331,55 @@ const desvioResultStyles = StyleSheet.create({
     fontSize: 11,
     color: Colors.faint,
     marginLeft: 4,
+  },
+  enemyDetailOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  enemyDetailCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 24,
+    width: '100%',
+    alignItems: 'center',
+    gap: 6,
+  },
+  enemyDetailIcon: {
+    fontSize: 40,
+    marginBottom: 4,
+  },
+  enemyDetailName: {
+    fontFamily: Fonts.title,
+    fontSize: 18,
+    color: Colors.text,
+    textAlign: 'center',
+  },
+  enemyDetailType: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  enemyDetailDesc: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.sub,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  enemyDetailDescMuted: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: Colors.faint,
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
 });

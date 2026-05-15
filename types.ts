@@ -269,6 +269,16 @@ export interface TurnUpdate {
   message: string;
 }
 
+export interface CombatAlly {
+  id: string;
+  name: string;
+  type: string;
+  hpCurrent: number;
+  hpMax: number;
+  portraitUrl?: string;
+  desc?: string;
+}
+
 export interface EnemyInstance {
   instanceId: string;
   templateId?: string;
@@ -278,6 +288,7 @@ export interface EnemyInstance {
   hpCurrent: number;
   hpMax: number;
   xp: number;
+  desc?: string;
   notes?: string;
 }
 

@@ -162,6 +162,11 @@ export async function getCombatBosses(): Promise<BossInstance[]> {
   return res.data;
 }
 
+export async function getCombatAllies(): Promise<import('@/types').CombatAlly[]> {
+  const res = await api.get<import('@/types').CombatAlly[]>('/api/combat/allies');
+  return res.data;
+}
+
 export async function getTurnState(): Promise<{ initiative: import('@/types').InitiativeEntry[]; totalTurns: number }> {
   const res = await api.get('/api/master/turn-state');
   return res.data;

@@ -5,10 +5,10 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getImages, getCollectiveBars, getTurnState } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getCombatAllies, getImages, getCollectiveBars, getTurnState } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
-import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar } from '@/types';
+import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, CombatAlly } from '@/types';
 import { useSobrecargaStore } from '@/store/sobrecargaStore';
 // GameImage used in STOMP handler type annotation below
 
@@ -25,6 +25,7 @@ export default function GameScreen() {
   const setDamageResult = useGameStore((s) => s.setDamageResult);
   const setEnemies = useGameStore((s) => s.setEnemies);
   const setBosses = useGameStore((s) => s.setBosses);
+  const setAllies = useGameStore((s) => s.setAllies);
   const setCollectiveBars = useGameStore((s) => s.setCollectiveBars);
   const setSobrecargaResult = useSobrecargaStore((s) => s.setResult);
 
@@ -108,6 +109,11 @@ export default function GameScreen() {
         setBosses(JSON.parse(msg.body) as BossInstance[]);
       });
 
+      stomp.subscribe('/topic/combat/allies', (msg) => {
+        if (!mounted) return;
+        setAllies(JSON.parse(msg.body) as CombatAlly[]);
+      });
+
       stomp.subscribe('/topic/collective-bars', (msg) => {
         if (!mounted) return;
         setCollectiveBars(JSON.parse(msg.body) as CollectiveBar[]);
@@ -125,11 +131,12 @@ export default function GameScreen() {
 
       // Fetch skill tree, essencias catalog, and current combat state
       try {
-        const [tree, essencias, enemies, bosses, imgs, colBars] = await Promise.all([
+        const [tree, essencias, enemies, bosses, allies, imgs, colBars] = await Promise.all([
           getSkillTree(playerId),
           getEssencias(),
           getCombatEnemies(),
           getCombatBosses(),
+          getCombatAllies(),
           getImages(),
           getCollectiveBars(),
         ]);
@@ -138,6 +145,7 @@ export default function GameScreen() {
           setEssencias(essencias);
           setEnemies(enemies);
           setBosses(bosses);
+          setAllies(allies);
           setImages(imgs);
           setCollectiveBars(colBars);
         }
