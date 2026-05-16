@@ -273,6 +273,7 @@ export interface CombatAlly {
   id: string;
   name: string;
   type: string;
+  icon?: string;
   hpCurrent: number;
   hpMax: number;
   portraitUrl?: string;

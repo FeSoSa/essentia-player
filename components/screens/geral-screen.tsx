@@ -70,7 +70,12 @@ export function GeralScreen() {
   const [skillModalSkill, setSkillModalSkill] = useState<SkillTreeEntry | null>(null);
   const [sobrecargaOpen,    setSobrecargaOpen]    = useState(false);
   const [enemyDetailOpen,   setEnemyDetailOpen]   = useState(false);
-  const [selectedEnemy,     setSelectedEnemy]     = useState<{ icon?: string; name: string; type: string; desc?: string } | null>(null);
+  const [selectedEnemy,     setSelectedEnemy]     = useState<{
+    icon?: string; name: string; type: string;
+    desc?: string; notes?: string;
+    hpCurrent?: number; hpMax?: number;
+    portraitUrl?: string; isAlly?: boolean;
+  } | null>(null);
   const [desvioModalOpen, setDesvioModalOpen] = useState(false);
   const [desvioInput,     setDesvioInput]     = useState('');
   const [desvioLoading,   setDesvioLoading]   = useState(false);
@@ -243,61 +248,97 @@ export function GeralScreen() {
       {/* ─── COMBAT PANEL ─── */}
       <View style={styles.combatPanel}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.combatScroll}>
-          <View style={combatActive ? styles.combatBadge : styles.combatBadgeInactive}>
-            <Text style={[styles.combatBadgeText, !combatActive && styles.combatBadgeTextMuted]}>
-              {combatActive ? 'COMBATE ATIVO' : 'SEM COMBATE'}
-            </Text>
+
+          {/* Badge + round na mesma linha */}
+          <View style={styles.combatHeader}>
+            <View style={[styles.combatBadge, !combatActive && styles.combatBadgeInactive]}>
+              <Text style={[styles.combatBadgeText, !combatActive && styles.combatBadgeTextMuted]}>
+                {combatActive ? 'COMBATE ATIVO' : 'SEM COMBATE'}
+              </Text>
+            </View>
+            {combatActive && (
+              <View style={styles.roundPill}>
+                <Text style={styles.roundText}>R{turnCount + 1}</Text>
+              </View>
+            )}
           </View>
 
-          {/* Inimigos e bosses ativos — só quando há turnos */}
-          {combatActive && (enemies.length > 0 || bosses.length > 0 || allies.length > 0) && (
-            <View style={styles.entityList}>
-              {enemies.map((e) => (
-                <TouchableOpacity key={e.instanceId} style={styles.entityRow}
-                  onPress={() => { setSelectedEnemy(e); setEnemyDetailOpen(true); }}
-                  activeOpacity={0.7}>
-                  <Text style={styles.entityIcon}>{e.icon || '⚔'}</Text>
-                  <Text style={styles.entityName} numberOfLines={1}>{e.name}</Text>
-                  <View style={[styles.entityHpDot, { backgroundColor: hpColor(e.hpCurrent, e.hpMax) }]} />
-                </TouchableOpacity>
-              ))}
-              {bosses.map((b) => {
-                const phase = b.phases[b.currentPhase];
-                return (
-                  <TouchableOpacity key={b.instanceId} style={styles.entityRow}
-                    onPress={() => { setSelectedEnemy({ icon: b.icon, name: b.name, type: 'Boss' }); setEnemyDetailOpen(true); }}
-                    activeOpacity={0.7}>
-                    <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
-                    <Text style={styles.entityName} numberOfLines={1}>
-                      {b.currentPhase > 0 && phase?.name ? `${b.name} — ${phase.name}` : b.name}
-                    </Text>
-                    <View style={[styles.entityHpDot, { backgroundColor: hpColor(b.hpCurrent, phase?.hpMax ?? 1) }]} />
-                  </TouchableOpacity>
-                );
-              })}
-              {allies.length > 0 && (enemies.length > 0 || bosses.length > 0) && (
-                <View style={styles.entityDivider} />
-              )}
-              {allies.map((a) => (
-                <TouchableOpacity key={a.id} style={styles.allyRow}
-                  onPress={() => { setSelectedEnemy({ icon: a.icon, name: a.name, type: a.type, desc: a.desc }); setEnemyDetailOpen(true); }}
-                  activeOpacity={0.7}>
-                  <Text style={styles.entityIcon}>{a.icon || '🛡️'}</Text>
-                  <Text style={styles.allyName} numberOfLines={1}>{a.name}</Text>
-                  <View style={[styles.entityHpDot, { backgroundColor: hpColor(a.hpCurrent, a.hpMax) }]} />
-                </TouchableOpacity>
-              ))}
+          {/* Turno atual */}
+          {combatActive && currentPlayer && (
+            <View style={styles.turnRow}>
+              <View style={styles.turnDot} />
+              <Text style={styles.turnText} numberOfLines={1}>{currentPlayer.name}</Text>
             </View>
           )}
 
-          <View style={styles.roundPill}>
-            <Text style={styles.roundText}>
-              {combatActive ? `ROUND ${turnCount + 1}` : 'ROUND —'}
-            </Text>
-          </View>
-          <Text style={[styles.turnText, !combatActive && styles.turnTextMuted]}>
-            {combatActive && currentPlayer ? `${currentPlayer.name} está jogando` : '—'}
-          </Text>
+          {/* Inimigos e bosses — só durante combate */}
+          {combatActive && (enemies.length > 0 || bosses.length > 0) && (
+            <View style={styles.entityList}>
+              <Text style={styles.entitySectionLabel}>INIMIGOS</Text>
+              {enemies.map((e) => {
+                const pct = e.hpMax > 0 ? Math.max(0, Math.min(e.hpCurrent / e.hpMax, 1)) : 0;
+                return (
+                  <TouchableOpacity key={e.instanceId} style={styles.entityRow}
+                    onPress={() => { setSelectedEnemy({ icon: e.icon, name: e.name, type: e.type, desc: e.desc, notes: e.notes, hpCurrent: e.hpCurrent, hpMax: e.hpMax }); setEnemyDetailOpen(true); }}
+                    activeOpacity={0.7}>
+                    <Text style={styles.entityIcon}>{e.icon || '⚔'}</Text>
+                    <View style={styles.entityInfo}>
+                      <Text style={styles.enemyName} numberOfLines={1}>{e.name}</Text>
+                      <View style={styles.entityHpTrack}>
+                        <View style={[styles.entityHpFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: hpColor(e.hpCurrent, e.hpMax) }]} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              {bosses.map((b) => {
+                const phase = b.phases[b.currentPhase];
+                const hpMax = phase?.hpMax ?? 1;
+                const pct = hpMax > 0 ? Math.max(0, Math.min(b.hpCurrent / hpMax, 1)) : 0;
+                return (
+                  <TouchableOpacity key={b.instanceId} style={styles.entityRow}
+                    onPress={() => { setSelectedEnemy({ icon: b.icon, name: b.name, type: 'Boss', notes: b.notes, hpCurrent: b.hpCurrent, hpMax }); setEnemyDetailOpen(true); }}
+                    activeOpacity={0.7}>
+                    <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
+                    <View style={styles.entityInfo}>
+                      <Text style={styles.bossName} numberOfLines={1}>
+                        {b.currentPhase > 0 && phase?.name ? `${b.name} — ${phase.name}` : b.name}
+                      </Text>
+                      <View style={styles.entityHpTrack}>
+                        <View style={[styles.entityHpFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: hpColor(b.hpCurrent, hpMax) }]} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Aliados — visíveis sempre que existirem */}
+          {allies.length > 0 && (
+            <View style={styles.entityList}>
+              <Text style={styles.entitySectionLabelAlly}>ALIADOS</Text>
+              {allies.map((a) => {
+                const pct = a.hpMax > 0 ? Math.max(0, Math.min(a.hpCurrent / a.hpMax, 1)) : 0;
+                return (
+                  <TouchableOpacity key={a.id} style={styles.entityRow}
+                    onPress={() => { setSelectedEnemy({ icon: a.icon, name: a.name, type: a.type, desc: a.desc, hpCurrent: a.hpCurrent, hpMax: a.hpMax, portraitUrl: a.portraitUrl, isAlly: true }); setEnemyDetailOpen(true); }}
+                    activeOpacity={0.7}>
+                    {a.portraitUrl
+                      ? <Image source={{ uri: normalizePortraitUrl(a.portraitUrl) }} style={styles.allyThumb} />
+                      : <Text style={styles.entityIcon}>{a.icon || '🛡'}</Text>
+                    }
+                    <View style={styles.entityInfo}>
+                      <Text style={styles.allyName} numberOfLines={1}>{a.name}</Text>
+                      <View style={styles.entityHpTrack}>
+                        <View style={[styles.entityHpFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: hpColor(a.hpCurrent, a.hpMax) }]} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
 
           <View style={styles.initiativeRow}>
             <Text style={styles.combatStatLabel}>INICIATIVA</Text>
@@ -613,20 +654,67 @@ export function GeralScreen() {
       <SobrecargaModal visible={sobrecargaOpen} onClose={() => setSobrecargaOpen(false)} />
 
       <Modal transparent animationType="fade" visible={enemyDetailOpen} onRequestClose={() => setEnemyDetailOpen(false)}>
-        <TouchableOpacity style={styles.enemyDetailOverlay} activeOpacity={1} onPress={() => setEnemyDetailOpen(false)}>
-          <View style={styles.enemyDetailCard}>
-            {selectedEnemy && (
-              <>
-                <Text style={styles.enemyDetailIcon}>{selectedEnemy.icon || '⚔'}</Text>
-                <Text style={styles.enemyDetailName}>{selectedEnemy.name}</Text>
-                {!!selectedEnemy.type && (
-                  <Text style={styles.enemyDetailType}>{selectedEnemy.type}</Text>
-                )}
-                <Text style={selectedEnemy.desc ? styles.enemyDetailDesc : styles.enemyDetailDescMuted}>
-                  {selectedEnemy.desc || 'Sem descrição.'}
-                </Text>
-              </>
-            )}
+        <TouchableOpacity style={entityDetailStyles.overlay} activeOpacity={1} onPress={() => setEnemyDetailOpen(false)}>
+          <View style={entityDetailStyles.card}>
+            {selectedEnemy && (() => {
+              const accent = selectedEnemy.isAlly ? '#4ade80' : Colors.danger;
+              const hpPct = (selectedEnemy.hpMax ?? 0) > 0
+                ? Math.max(0, Math.min((selectedEnemy.hpCurrent ?? 0) / selectedEnemy.hpMax!, 1))
+                : null;
+              return (
+                <>
+                  <View style={[entityDetailStyles.accentBar, { backgroundColor: accent }]} />
+                  <View style={entityDetailStyles.body}>
+                    {/* Header: portrait/icon + name + type */}
+                    <View style={entityDetailStyles.headerRow}>
+                      {selectedEnemy.portraitUrl
+                        ? <Image
+                            source={{ uri: normalizePortraitUrl(selectedEnemy.portraitUrl) }}
+                            style={entityDetailStyles.portrait}
+                            resizeMode="cover"
+                          />
+                        : <Text style={entityDetailStyles.iconText}>
+                            {selectedEnemy.icon || (selectedEnemy.isAlly ? '🛡' : '⚔')}
+                          </Text>
+                      }
+                      <View style={entityDetailStyles.headerText}>
+                        <Text style={entityDetailStyles.name}>{selectedEnemy.name}</Text>
+                        {!!selectedEnemy.type && (
+                          <Text style={[entityDetailStyles.typeBadge, { color: accent }]}>{selectedEnemy.type.toUpperCase()}</Text>
+                        )}
+                      </View>
+                    </View>
+
+                    {/* HP bar */}
+                    {hpPct !== null && (
+                      <View style={entityDetailStyles.hpSection}>
+                        <View style={entityDetailStyles.hpBarTrack}>
+                          <View style={[entityDetailStyles.hpBarFill, { width: `${Math.round(hpPct * 100)}%` as any, backgroundColor: accent }]} />
+                        </View>
+                        <Text style={[entityDetailStyles.hpLabel, { color: accent }]}>
+                          {selectedEnemy.hpCurrent} / {selectedEnemy.hpMax}
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Description */}
+                    {(selectedEnemy.desc || selectedEnemy.notes) && (
+                      <View style={entityDetailStyles.descSection}>
+                        {!!selectedEnemy.desc && (
+                          <Text style={entityDetailStyles.desc}>{selectedEnemy.desc}</Text>
+                        )}
+                        {!!selectedEnemy.notes && (
+                          <Text style={entityDetailStyles.notes}>{selectedEnemy.notes}</Text>
+                        )}
+                      </View>
+                    )}
+                    {!selectedEnemy.desc && !selectedEnemy.notes && (
+                      <Text style={entityDetailStyles.descMuted}>Sem descrição.</Text>
+                    )}
+                  </View>
+                </>
+              );
+            })()}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -857,28 +945,76 @@ const styles = StyleSheet.create({
     gap: 6,
   },
 
+  combatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   combatBadge: {
+    flex: 1,
     backgroundColor: Colors.danger,
     borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    alignItems: 'center',
   },
   combatBadgeInactive: {
+    flex: 1,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    alignItems: 'center',
   },
   combatBadgeText: {
     fontFamily: Fonts.title,
-    fontSize: 11,
+    fontSize: 10,
     color: '#fff',
     letterSpacing: 1,
   },
   combatBadgeTextMuted: {
     color: Colors.muted,
+  },
+  roundPill: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    alignItems: 'center',
+    minWidth: 36,
+  },
+  roundText: {
+    fontFamily: Fonts.title,
+    fontSize: 10,
+    color: Colors.muted,
+    letterSpacing: 1,
+  },
+  turnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Colors.surface,
+    borderRadius: 4,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.ember,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  turnDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.ember,
+  },
+  turnText: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 11,
+    color: Colors.text,
+    flex: 1,
   },
 
   entityList: {
@@ -893,62 +1029,76 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingVertical: 1,
   },
   entityIcon: {
     fontSize: 10,
     width: 14,
     textAlign: 'center',
   },
-  entityName: {
+  entityInfo: {
     flex: 1,
+    gap: 2,
+  },
+  entityName: {
     fontFamily: Fonts.body,
     fontSize: 9,
     color: Colors.text,
   },
-  entityHpDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  entityHpTrack: {
+    height: 3,
+    backgroundColor: Colors.surface,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  entityHpFill: {
+    height: '100%',
+    borderRadius: 2,
   },
   entityDivider: {
     height: 1,
     backgroundColor: Colors.border,
     marginVertical: 2,
   },
-  allyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    opacity: 0.9,
+  entitySectionLabel: {
+    fontFamily: Fonts.title,
+    fontSize: 8,
+    color: Colors.danger,
+    letterSpacing: 2,
+    marginBottom: 2,
+    opacity: 0.8,
+  },
+  entitySectionLabelAlly: {
+    fontFamily: Fonts.title,
+    fontSize: 8,
+    color: '#4ade80',
+    letterSpacing: 2,
+    marginBottom: 2,
+    opacity: 0.8,
+  },
+  enemyName: {
+    fontFamily: Fonts.body,
+    fontSize: 9,
+    color: Colors.danger,
+  },
+  bossName: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 9,
+    color: Colors.danger,
+  },
+  allyList: {
+    borderTopColor: '#4ade8044',
+  },
+  allyThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: Colors.surface,
   },
   allyName: {
-    flex: 1,
     fontFamily: Fonts.body,
     fontSize: 9,
     color: '#4ade80',
-  },
-  roundPill: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  roundText: {
-    fontFamily: Fonts.title,
-    fontSize: 11,
-    color: Colors.muted,
-    letterSpacing: 1,
-  },
-  turnText: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    color: Colors.text,
-    flex: 1,
-  },
-  turnTextMuted: {
-    color: Colors.faint,
   },
   faPanel: {
     gap: 6,
@@ -1332,54 +1482,103 @@ const desvioResultStyles = StyleSheet.create({
     color: Colors.faint,
     marginLeft: 4,
   },
-  enemyDetailOverlay: {
+});
+
+const entityDetailStyles = StyleSheet.create({
+  overlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.65)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
   },
-  enemyDetailCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 16,
+  card: {
+    backgroundColor: Colors.card,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: 24,
+    borderRadius: 8,
+    width: 300,
+    overflow: 'hidden',
+  },
+  accentBar: {
+    height: 3,
     width: '100%',
+  },
+  body: {
+    padding: 16,
+    gap: 10,
+  },
+  headerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 12,
   },
-  enemyDetailIcon: {
-    fontSize: 40,
-    marginBottom: 4,
+  portrait: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: Colors.surface,
   },
-  enemyDetailName: {
-    fontFamily: Fonts.title,
-    fontSize: 18,
-    color: Colors.text,
+  iconText: {
+    fontSize: 32,
+    width: 52,
     textAlign: 'center',
   },
-  enemyDetailType: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    color: Colors.muted,
-    textTransform: 'uppercase',
+  headerText: {
+    flex: 1,
+    gap: 2,
+  },
+  name: {
+    fontFamily: Fonts.title,
+    fontSize: 16,
+    color: Colors.text,
+  },
+  typeBadge: {
+    fontFamily: Fonts.title,
+    fontSize: 9,
     letterSpacing: 1,
   },
-  enemyDetailDesc: {
-    fontFamily: Fonts.body,
-    fontSize: 13,
-    color: Colors.sub,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
+  hpSection: {
+    gap: 4,
   },
-  enemyDetailDescMuted: {
+  hpBarTrack: {
+    height: 6,
+    backgroundColor: Colors.surface,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  hpBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  hpLabel: {
+    fontFamily: Fonts.title,
+    fontSize: 11,
+    letterSpacing: 0.5,
+  },
+  descSection: {
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: 8,
+  },
+  desc: {
     fontFamily: Fonts.body,
     fontSize: 13,
+    color: Colors.muted,
+    lineHeight: 18,
+  },
+  notes: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
     color: Colors.faint,
-    textAlign: 'center',
-    marginTop: 8,
+    fontStyle: 'italic',
+    lineHeight: 17,
+  },
+  descMuted: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    color: Colors.faint,
     fontStyle: 'italic',
   },
 });
