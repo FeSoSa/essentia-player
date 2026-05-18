@@ -69,8 +69,8 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
   const isWeapon = item.type === 'weapon';
   const isArmor  = item.type === 'armor';
   const hasBonus = item.attributeBonus && Object.keys(item.attributeBonus).length > 0;
-  const dmg      = isWeapon && (item.damageBase || item.damageDice)
-    ? weaponDamageFormula({ damageBase: item.damageBase, damageDice: item.damageDice, damageAttribute: item.damageAttribute })
+  const dmg      = isWeapon && (item.damageBase || item.damageAttribute)
+    ? weaponDamageFormula({ damageBase: item.damageBase, damageAttribute: item.damageAttribute, equilibrio: item.equilibrio })
     : null;
 
   return (

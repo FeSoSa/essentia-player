@@ -9,6 +9,7 @@ interface PlayerStore {
   setSkillTree: (tree: SkillTreeEntry[]) => void;
   setEssencias: (list: Essencia[]) => void;
   updateSlotCooldowns: (slots: Slot[]) => void;
+  clearAllCooldowns: () => void;
   clearPlayer: () => void;
 }
 
@@ -22,6 +23,12 @@ export const usePlayerStore = create<PlayerStore>((set) => ({
   updateSlotCooldowns: (slots) =>
     set((state) =>
       state.player ? { player: { ...state.player, slots } } : {}
+    ),
+  clearAllCooldowns: () =>
+    set((state) =>
+      state.player
+        ? { player: { ...state.player, slots: state.player.slots.map((s) => ({ ...s, cooldownRemaining: 0 })) } }
+        : {}
     ),
   clearPlayer: () => set({ player: null, skillTree: [], essencias: [] }),
 }));

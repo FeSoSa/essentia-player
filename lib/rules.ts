@@ -1,3 +1,5 @@
+import type { Attributes } from '@/types';
+
 export function getModifier(val: number): number {
   if (val <= 7) return -1;
   if (val <= 11) return 0;
@@ -78,12 +80,35 @@ const ATTR_ABBREV: Record<string, string> = {
   resistance: 'RES', flow: 'FLX', wisdom: 'SAB', presence: 'PRE', defense: 'DEF',
 };
 
-export function weaponDamageFormula(w: { damageBase?: number; damageDice?: { quantity: number; die: string }; damageAttribute?: string }): string {
+export function weaponDamageFormula(w: { damageBase?: number; damageAttribute?: string; equilibrio?: number }): string {
   const parts: string[] = [];
   if (w.damageBase) parts.push(String(w.damageBase));
-  if (w.damageDice) parts.push(`${w.damageDice.quantity}${w.damageDice.die}`);
-  if (w.damageAttribute) parts.push(ATTR_ABBREV[w.damageAttribute] ?? w.damageAttribute.slice(0, 3).toUpperCase());
+  if (w.damageAttribute) {
+    // attribute is stored as abbreviation already ("FOR", "FOR/AGI"); fall back for legacy internal-key format
+    const attr = w.damageAttribute.includes('/')
+      ? w.damageAttribute
+      : (ATTR_ABBREV[w.damageAttribute] ?? w.damageAttribute.slice(0, 3).toUpperCase());
+    const eq = w.equilibrio != null ? `/${w.equilibrio}` : '';
+    parts.push(`d20×${attr}${eq}`);
+  }
   return parts.join(' + ') || '—';
+}
+
+export function resolveAtributeMod(atributo: string | undefined, attrs: Attributes): number {
+  if (!atributo) return 0;
+  const ABBREV_TO_KEY: Record<string, keyof Attributes> = {
+    FOR: 'strength', AGI: 'agility', INT: 'intelligence',
+    RES: 'resistance', FLX: 'flow', SAB: 'wisdom', PRE: 'presence', DEF: 'defense',
+  };
+  const values = atributo.split('/').map((a) => {
+    const key = ABBREV_TO_KEY[a.trim() as keyof typeof ABBREV_TO_KEY];
+    return key ? getModifier(attrs[key]) : 0;
+  });
+  return Math.max(...values, 0);
+}
+
+export function unarmedDamageFormula(a: { damageBase: number; attribute: string }): string {
+  return `${a.damageBase} + d20×${a.attribute}/4`;
 }
 
 export function getArmorWeight(armorType?: string): ArmorWeight {

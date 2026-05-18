@@ -8,7 +8,7 @@ import { NumPad } from '@/components/ui/num-pad';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, skillMiss } from '@/lib/api';
-import { getModifier, formatMod } from '@/lib/rules';
+import { getModifier, formatMod, resolveAtributeMod } from '@/lib/rules';
 import type { SkillTreeEntry, Slot, DamageResult, Attributes } from '@/types';
 
 interface Props {
@@ -18,22 +18,11 @@ interface Props {
   activeSlot?: Slot | null;   // quando aberto da aba Geral para usar a habilidade
   onClose: () => void;
   onEquipPress: (skill: SkillTreeEntry) => void;
+  onRemovePress?: () => void; // quando aberto de um slot equipado no grid
 }
 
 type TargetKind = 'enemy' | 'boss';
 
-function getSkillMod(categoria: string, attributes: Attributes): { label: string; value: number } | null {
-  const c = categoria.toLowerCase();
-  if (c.includes('físic') || c.includes('fisic') || c.includes('força') || c.includes('corpo'))
-    return { label: 'FOR', value: getModifier(attributes.strength) };
-  if (c.includes('mági') || c.includes('magi') || c.includes('intel') || c.includes('éter') || c.includes('eter'))
-    return { label: 'INT', value: getModifier(attributes.intelligence) };
-  if (c.includes('agil') || c.includes('precis'))
-    return { label: 'AGI', value: getModifier(attributes.agility) };
-  if (c.includes('fluxo') || c.includes('flux'))
-    return { label: 'FLX', value: getModifier(attributes.flow) };
-  return null;
-}
 
 function parseDice(text: string): string | null {
   const m = text.match(/\d+[dD]\d+(\s*[+\-]\s*\w+)*/);
@@ -49,9 +38,9 @@ const UPGRADE_EFFECTS: Record<number, { aumento: string; otimizacao: string }> =
   5: { aumento: '+60% dano, +40% custo', otimizacao: '-40% custo' },
 };
 
-function skillStatus(s: SkillTreeEntry): 'desbloqueada' | 'disponivel' | 'bloqueada' {
-  if (s.unlocked)          return 'desbloqueada';
-  if (!s.requirementsText) return 'disponivel';
+function skillStatus(s: SkillTreeEntry, accessibleByEssencia: Set<string>): 'desbloqueada' | 'disponivel' | 'bloqueada' {
+  if (s.unlocked) return 'desbloqueada';
+  if (!s.requirementsText || accessibleByEssencia.has(s.skillId)) return 'disponivel';
   return 'bloqueada';
 }
 
@@ -69,9 +58,11 @@ const STATUS_LABEL: Record<string, string> = {
 
 const MAESTRIA_THRESHOLDS = [0, 3, 8, 16, 28];
 
-export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onEquipPress }: Props) {
+export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onEquipPress, onRemovePress }: Props) {
   const player       = usePlayerStore((s) => s.player)!;
+  const setPlayer    = usePlayerStore((s) => s.setPlayer);
   const setSkillTree = usePlayerStore((s) => s.setSkillTree);
+  const essencias    = usePlayerStore((s) => s.essencias);
   const enemies      = useGameStore((s) => s.enemies);
   const bosses       = useGameStore((s) => s.bosses);
 
@@ -109,7 +100,15 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
 
   if (!skill) return null;
 
-  const status    = skillStatus(skill);
+  const playerEssenciaIds = new Set(player.essenciasObtidas.map((o) => o.essenciaId));
+  const accessibleByEssencia = new Set(
+    essencias.flatMap((ess) => {
+      const playerHas = playerEssenciaIds.has(ess.id);
+      const parentOwned = ess.type === 'Derivada' && !!ess.parentId && playerEssenciaIds.has(ess.parentId);
+      return (playerHas || parentOwned) ? ess.skillIds : [];
+    })
+  );
+  const status    = skillStatus(skill, accessibleByEssencia);
   const maestria  = skill.maestria;
   const equipped  = slots.some((s) => s.skillId === skill.skillId);
   const cooldown  = slots.find((s) => s.skillId === skill.skillId)?.cooldownRemaining ?? 0;
@@ -119,7 +118,6 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
 
   const diceValue    = parseInt(diceInput, 10);
   const validDice    = !isNaN(diceValue) && diceValue > 0;
-  const skillMod     = skill ? getSkillMod(skill.categoria ?? '', player.attributes) : null;
   const agiMod       = getModifier((player.effectiveAttributes ?? player.attributes).agility);
   const bonusValue   = parseInt(bonusInput, 10) || 0;
   const hitValue     = parseInt(hitInput, 10);
@@ -128,8 +126,12 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const diceFormula   = skill ? parseDice(skill.descricao) : null;
   const danoBase      = skill?.danoBase ?? 0;
   const pressaoValue  = parseInt(pressaoInput, 10) || 0;
+  const equilibrio    = skill?.equilibrio ?? null;
+  const modAtributo   = skill?.atributo ? resolveAtributeMod(skill.atributo, player.attributes) : 0;
   const baseDamage    = validDice
-    ? danoBase + (skillMod ? Math.round((diceValue * skillMod.value) / 4) : diceValue)
+    ? equilibrio != null
+      ? danoBase + Math.floor((diceValue * modAtributo) / equilibrio)
+      : danoBase
     : null;
   const maestriaBonus = maestria?.bonusDano ?? 0;
   const damageWithMaestria = baseDamage !== null
@@ -351,6 +353,13 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                     <Text style={styles.detailValue}>
                       {skill.cooldownTurns} turno{skill.cooldownTurns > 1 ? 's' : ''}
                     </Text>
+                  </View>
+                )}
+                {/* Pressão */}
+                {skill.pressaoDice && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>PRESSÃO</Text>
+                    <Text style={[styles.detailValue, { color: '#a855f7' }]}>+1d6 por ponto de Pressão</Text>
                   </View>
                 )}
             </View>
@@ -590,37 +599,45 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                           {/* Com pressão: campo de input + total final */}
                           {skill.pressaoDice && player.pressao && (
                             <>
-                              <View style={styles.bonusRow}>
-                                <TouchableOpacity
-                                  style={[styles.padModeBtn, dmgPadMode === 'pressao' && styles.padModeBtnActive]}
-                                  onPress={() => setDmgPadMode(m => m === 'dice' ? 'pressao' : 'dice')}
-                                  activeOpacity={0.7}
-                                >
-                                  <Text style={[styles.padModeBtnText, dmgPadMode === 'pressao' && styles.padModeBtnTextActive]}>
-                                    PAD
-                                  </Text>
-                                </TouchableOpacity>
-                                <Text style={styles.bonusLabel}>P {player.pressao.current}d6</Text>
-                                {dmgPadMode === 'pressao' ? (
-                                  <Text style={[styles.bonusField, styles.bonusFieldDisplay]}>
-                                    {pressaoInput || '0'}
-                                  </Text>
-                                ) : (
-                                  <TextInput
-                                    style={styles.bonusField}
-                                    value={pressaoInput}
-                                    onChangeText={setPressaoInput}
-                                    keyboardType="number-pad"
-                                    placeholder="0"
-                                    placeholderTextColor={Colors.muted}
-                                  />
+                              <View style={styles.pressaoBlock}>
+                                <View style={styles.pressaoHeaderRow}>
+                                  <Text style={styles.pressaoLabelText}>PRESSÃO</Text>
+                                  <Text style={styles.pressaoDiceHint}>{player.pressao.current} × 1d6</Text>
+                                </View>
+                                <View style={styles.pressaoInputRow}>
+                                  <TouchableOpacity
+                                    style={[styles.numpadToggleBtn, dmgPadMode === 'pressao' && styles.numpadToggleBtnActive]}
+                                    onPress={() => setDmgPadMode(m => m === 'dice' ? 'pressao' : 'dice')}
+                                    activeOpacity={0.7}
+                                  >
+                                    <Text style={[styles.numpadToggleText, dmgPadMode === 'pressao' && styles.numpadToggleTextActive]}>
+                                      {dmgPadMode === 'pressao' ? '⌨ NUMPAD ATIVO' : '⌨ USAR NUMPAD'}
+                                    </Text>
+                                  </TouchableOpacity>
+                                  {dmgPadMode === 'pressao' ? (
+                                    <Text style={[styles.pressaoValueField, styles.pressaoValueFieldActive]}>
+                                      {pressaoInput || '0'}
+                                    </Text>
+                                  ) : (
+                                    <TextInput
+                                      style={styles.pressaoValueField}
+                                      value={pressaoInput}
+                                      onChangeText={setPressaoInput}
+                                      keyboardType="number-pad"
+                                      placeholder="0"
+                                      placeholderTextColor={Colors.muted}
+                                    />
+                                  )}
+                                </View>
+                                {damagePreview !== null && (
+                                  <View style={styles.pressaoTotalRow}>
+                                    <Text style={styles.pressaoTotalLabel}>TOTAL</Text>
+                                    <Text style={[styles.stepBig, { fontSize: 32, color: '#a855f7' }]}>
+                                      {damagePreview}
+                                    </Text>
+                                  </View>
                                 )}
                               </View>
-                              {damagePreview !== null && (
-                                <Text style={[styles.stepBig, { fontSize: 32, color: Colors.danger }]}>
-                                  {damagePreview}
-                                </Text>
-                              )}
                             </>
                           )}
                         </>
@@ -684,6 +701,16 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 activeOpacity={0.7}
               >
                 <Text style={styles.actionBtnText}>EQUIPAR</Text>
+              </TouchableOpacity>
+            )}
+
+            {onRemovePress && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionBtnRemove]}
+                onPress={() => { handleClose(); onRemovePress(); }}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.actionBtnText, { color: Colors.danger }]}>REMOVER</Text>
               </TouchableOpacity>
             )}
 
@@ -833,9 +860,10 @@ const styles = StyleSheet.create({
   cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 2 },
   cancelText:{ fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 2 },
   actionBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 2, minWidth: 130, alignItems: 'center' },
-  actionBtnUnlock: { backgroundColor: Colors.gold },
-  actionBtnEquip:  { backgroundColor: Colors.ember },
-  actionBtnText:   { fontFamily: Fonts.title, fontSize: 10, color: Colors.bg, letterSpacing: 2 },
+  actionBtnUnlock:  { backgroundColor: Colors.gold },
+  actionBtnEquip:   { backgroundColor: Colors.ember },
+  actionBtnRemove:  { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.danger },
+  actionBtnText:    { fontFamily: Fonts.title, fontSize: 10, color: Colors.bg, letterSpacing: 2 },
   btnDisabled: { opacity: 0.6 },
 
   passivaBadge:    { fontFamily: Fonts.title, fontSize: 8, color: Colors.tealBright, letterSpacing: 2, borderWidth: 1, borderColor: Colors.tealBright, borderRadius: 2, paddingHorizontal: 5, paddingVertical: 1 },
@@ -895,6 +923,35 @@ const styles = StyleSheet.create({
   padModeBtnActive: { borderColor: Colors.ember, backgroundColor: 'rgba(251,146,60,0.12)' },
   padModeBtnText:   { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
   padModeBtnTextActive: { color: Colors.ember },
+
+  // Pressão redesign
+  pressaoBlock: {
+    marginTop: 6,
+    borderWidth: 1, borderColor: '#a855f744',
+    borderRadius: 6, backgroundColor: 'rgba(168,85,247,0.06)',
+    padding: 8, gap: 6,
+  },
+  pressaoHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pressaoLabelText: { fontFamily: Fonts.title, fontSize: 9, color: '#a855f7', letterSpacing: 2 },
+  pressaoDiceHint:  { fontFamily: Fonts.bodySemiBold, fontSize: 12, color: '#a855f7' },
+  pressaoInputRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  numpadToggleBtn: {
+    flex: 1, paddingVertical: 6, paddingHorizontal: 8,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 4,
+    backgroundColor: Colors.surface, alignItems: 'center',
+  },
+  numpadToggleBtnActive: { borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.12)' },
+  numpadToggleText: { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
+  numpadToggleTextActive: { color: '#a855f7' },
+  pressaoValueField: {
+    width: 52, height: 36, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 4, backgroundColor: Colors.surface,
+    fontFamily: Fonts.title, fontSize: 18, color: Colors.text, textAlign: 'center',
+    paddingVertical: 0,
+  },
+  pressaoValueFieldActive: { borderColor: '#a855f7', lineHeight: 36 },
+  pressaoTotalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
+  pressaoTotalLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
   stepInline:   { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   stepSide:     { flex: 1, gap: 4, justifyContent: 'center' },
   stepBig:      { fontFamily: Fonts.title, fontSize: 24, color: Colors.text },

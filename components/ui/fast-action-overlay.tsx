@@ -20,12 +20,9 @@ export function FastActionOverlay() {
 
   const voted = !!fastAction.lockOnePerPlayer &&
     !!playerId && (fastAction.lockedPlayers ?? []).includes(playerId);
-  const takenOptions = fastAction.lockOnePerPlayer
-    ? new Set(Object.values(fastAction.answers ?? {}))
-    : new Set<string>();
 
   async function handleVote(optionId: string) {
-    if (!playerId || voted || loading || takenOptions.has(optionId)) return;
+    if (!playerId || voted || loading) return;
     setLoading(true);
     try {
       await voteFastAction(playerId, optionId);
@@ -45,30 +42,21 @@ export function FastActionOverlay() {
           <Text style={styles.votedText}>Voto registrado</Text>
         ) : (
           <View style={styles.options}>
-            {fastAction.options.map((opt) => {
-              const taken = takenOptions.has(opt.id);
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={[
-                    styles.optionBtn,
-                    { backgroundColor: opt.color },
-                    taken && styles.optionBtnTaken,
-                  ]}
-                  onPress={() => handleVote(opt.id)}
-                  disabled={loading || taken}
-                  activeOpacity={0.8}
-                >
-                  {loading && !taken ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <Text style={[styles.optionText, taken && styles.optionTextTaken]}>
-                      {opt.text}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
+            {fastAction.options.map((opt) => (
+              <TouchableOpacity
+                key={opt.id}
+                style={[styles.optionBtn, { backgroundColor: opt.color }]}
+                onPress={() => handleVote(opt.id)}
+                disabled={loading}
+                activeOpacity={0.8}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.optionText}>{opt.text}</Text>
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         )}
       </View>
@@ -130,11 +118,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.tealBright,
     fontStyle: 'italic',
-  },
-  optionBtnTaken: {
-    opacity: 0.35,
-  },
-  optionTextTaken: {
-    textDecorationLine: 'line-through',
   },
 });

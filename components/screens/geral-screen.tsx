@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
-import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, weaponDamageFormula, type ArmorWeight } from '@/lib/rules';
+import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, weaponDamageFormula, unarmedDamageFormula, type ArmorWeight } from '@/lib/rules';
 import { ResourceBar } from '@/components/ui/resource-bar';
 import { SobrecargaModal } from '@/components/ui/sobrecarga-modal';
 import { NumPad } from '@/components/ui/num-pad';
 import { SkillInfoModal } from '@/components/ui/skill-info-modal';
+import { BasicAttackModal } from '@/components/ui/basic-attack-modal';
 import { GameIcon } from '@/components/ui/game-icon';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
@@ -76,6 +77,7 @@ export function GeralScreen() {
     hpCurrent?: number; hpMax?: number;
     portraitUrl?: string; isAlly?: boolean;
   } | null>(null);
+  const [basicAttackOpen, setBasicAttackOpen] = useState(false);
   const [desvioModalOpen, setDesvioModalOpen] = useState(false);
   const [desvioInput,     setDesvioInput]     = useState('');
   const [desvioLoading,   setDesvioLoading]   = useState(false);
@@ -349,8 +351,12 @@ export function GeralScreen() {
 
           {(() => {
             const weapon = player.equipment.mainHand;
-            const dmg = weapon ? weaponDamageFormula(weapon) : (player.char.unarmedDamage ?? '—');
-            const hasData = !!(weapon?.damageDice || weapon?.damageBase || player.char.unarmedDamage);
+            const dmg = weapon
+              ? weaponDamageFormula({ damageBase: weapon.damageBase, damageAttribute: weapon.damageAttribute, equilibrio: 4 })
+              : player.char.unarmedAttack
+              ? unarmedDamageFormula(player.char.unarmedAttack)
+              : '—';
+            const hasData = !!(weapon?.damageBase || player.char.unarmedAttack);
             return (
               <View style={styles.initiativeRow}>
                 <Text style={styles.combatStatLabel}>DANO BASE</Text>
@@ -374,6 +380,7 @@ export function GeralScreen() {
 
         return (
           <View style={styles.middleRow}>
+            {/* Essências */}
             <View style={styles.midSection}>
               <Text style={styles.midLabel}>ESSÊNCIAS</Text>
               <View style={styles.midGrid}>
@@ -393,7 +400,41 @@ export function GeralScreen() {
                 })}
               </View>
             </View>
+
             <View style={styles.midDivider} />
+
+            {/* Centro: Ataque Básico + Desviar empilhados */}
+            <View style={styles.combatActionsSection}>
+              <TouchableOpacity
+                style={[styles.combatActionBtn, !combatActive && styles.combatActionBtnDisabled]}
+                onPress={() => combatActive && setBasicAttackOpen(true)}
+                disabled={!combatActive}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.combatActionLabel}>ATAQUE</Text>
+              </TouchableOpacity>
+              <View style={styles.combatActionDivider} />
+              <TouchableOpacity
+                style={[styles.combatActionBtn, !canDesviar && styles.combatActionBtnDisabled]}
+                onPress={() => canDesviar && setDesvioModalOpen(true)}
+                disabled={!canDesviar}
+                activeOpacity={0.7}
+              >
+                <View style={styles.desvioDotsRow}>
+                  {[0, 1, 2].map((i) => (
+                    <View key={i} style={[
+                      styles.desvioDot,
+                      i < player.desviosRestantes ? styles.desvioDotFull : styles.desvioDotEmpty,
+                    ]} />
+                  ))}
+                </View>
+                <Text style={[styles.combatActionLabel, { color: Colors.danger }]}>DESVIAR</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.midDivider} />
+
+            {/* Efeitos */}
             <View style={styles.midSection}>
               <Text style={styles.midLabel}>EFEITOS</Text>
               <View style={styles.midGrid}>
@@ -411,23 +452,7 @@ export function GeralScreen() {
                 })}
               </View>
             </View>
-            <View style={styles.midDivider} />
-            <TouchableOpacity
-              style={[styles.desvioMidSection, !canDesviar && styles.desvioMidDisabled]}
-              onPress={() => canDesviar && setDesvioModalOpen(true)}
-              disabled={!canDesviar}
-              activeOpacity={0.75}
-            >
-              <View style={styles.desvioDotsRow}>
-                {[0, 1, 2].map((i) => (
-                  <View key={i} style={[
-                    styles.desvioDot,
-                    i < player.desviosRestantes ? styles.desvioDotFull : styles.desvioDotEmpty,
-                  ]} />
-                ))}
-              </View>
-              <Text style={styles.desvioMidLabel}>DESVIAR</Text>
-            </TouchableOpacity>
+
             {player.sobrecargaDesbloqueada && (
               <>
                 <View style={styles.midDivider} />
@@ -461,8 +486,8 @@ export function GeralScreen() {
         function renderSlot(slot: typeof player.slots[0] | null, key: string) {
           if (!slot) return <View key={key} style={[styles.slotBox, styles.slotEmpty]} />;
           const skill = slot.skillId ? skillMap.get(slot.skillId) : undefined;
-          const onCd = slot.cooldownRemaining > 0;
-          const pressable = !!skill && !onCd;
+          const onCd = combatActive && slot.cooldownRemaining > 0;
+          const pressable = !!skill && !onCd && combatActive;
           return (
             <TouchableOpacity
               key={key}
@@ -685,15 +710,17 @@ export function GeralScreen() {
                       </View>
                     </View>
 
-                    {/* HP bar */}
+                    {/* HP bar — aliados mostram números, inimigos só a barra */}
                     {hpPct !== null && (
                       <View style={entityDetailStyles.hpSection}>
                         <View style={entityDetailStyles.hpBarTrack}>
                           <View style={[entityDetailStyles.hpBarFill, { width: `${Math.round(hpPct * 100)}%` as any, backgroundColor: accent }]} />
                         </View>
-                        <Text style={[entityDetailStyles.hpLabel, { color: accent }]}>
-                          {selectedEnemy.hpCurrent} / {selectedEnemy.hpMax}
-                        </Text>
+                        {selectedEnemy.isAlly && (
+                          <Text style={[entityDetailStyles.hpLabel, { color: accent }]}>
+                            {selectedEnemy.hpCurrent} / {selectedEnemy.hpMax}
+                          </Text>
+                        )}
                       </View>
                     )}
 
@@ -727,6 +754,8 @@ export function GeralScreen() {
         onClose={() => { setSkillModalSlot(null); setSkillModalSkill(null); }}
         onEquipPress={() => {}}
       />
+
+      <BasicAttackModal visible={basicAttackOpen} onClose={() => setBasicAttackOpen(false)} />
     </View>
   );
 }
@@ -1219,6 +1248,31 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.title,
     fontSize: 13,
     color: Colors.faint,
+  },
+  combatActionsSection: {
+    width: 76,
+    flexDirection: 'column',
+  },
+  combatActionBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  combatActionBtnDisabled: {
+    opacity: 0.3,
+  },
+  combatActionLabel: {
+    fontFamily: Fonts.title,
+    fontSize: 8,
+    color: Colors.ember,
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  combatActionDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginHorizontal: 10,
   },
   desvioMidSection: {
     width: 72,

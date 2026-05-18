@@ -15,6 +15,7 @@ import { useSobrecargaStore } from '@/store/sobrecargaStore';
 export default function GameScreen() {
   const player = usePlayerStore((s) => s.player);
   const setPlayer = usePlayerStore((s) => s.setPlayer);
+  const clearAllCooldowns = usePlayerStore((s) => s.clearAllCooldowns);
   const setSkillTree = usePlayerStore((s) => s.setSkillTree);
   const setEssencias = usePlayerStore((s) => s.setEssencias);
   const setImages = useGameStore((s) => s.setImages);
@@ -23,6 +24,7 @@ export default function GameScreen() {
   const setTurnCount = useGameStore((s) => s.setTurnCount);
   const incrementTurn = useGameStore((s) => s.incrementTurn);
   const setDamageResult = useGameStore((s) => s.setDamageResult);
+  const setCooldownsCleared = useGameStore((s) => s.setCooldownsCleared);
   const setEnemies = useGameStore((s) => s.setEnemies);
   const setBosses = useGameStore((s) => s.setBosses);
   const setAllies = useGameStore((s) => s.setAllies);
@@ -73,6 +75,11 @@ export default function GameScreen() {
       stomp.subscribe(`/topic/player/${playerId}`, (msg) => {
         if (!mounted) return;
         const updated: Player = JSON.parse(msg.body);
+        // Zera cooldowns se não há combate OU se o mestre encerrou os turnos recentemente
+        const { initiative, cooldownsCleared } = useGameStore.getState();
+        if (initiative.length === 0 || cooldownsCleared) {
+          updated.slots = updated.slots.map((s) => ({ ...s, cooldownRemaining: 0 }));
+        }
         setPlayer(updated);
         // Skill tree pode ter mudado (maestria, desbloqueio) — re-fetch silencioso
         getSkillTree(playerId).then((tree) => { if (mounted) setSkillTree(tree); }).catch(() => {});
@@ -92,6 +99,11 @@ export default function GameScreen() {
         if (!mounted) return;
         const entries: InitiativeEntry[] = JSON.parse(msg.body);
         setInitiative(entries);
+        // Ao encerrar combate, zera cooldowns e levanta o flag — persiste até próxima skill usada
+        if (entries.length === 0) {
+          clearAllCooldowns();
+          setCooldownsCleared(true);
+        }
       });
 
       stomp.subscribe('/topic/turn', (msg) => {
@@ -126,6 +138,8 @@ export default function GameScreen() {
 
       stomp.subscribe(`/topic/player/${playerId}/damage-result`, (msg) => {
         if (!mounted) return;
+        // Uma skill foi usada — cooldowns do novo combate são válidos
+        setCooldownsCleared(false);
         setDamageResult(JSON.parse(msg.body));
       });
 

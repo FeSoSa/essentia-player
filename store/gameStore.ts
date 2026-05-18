@@ -12,6 +12,7 @@ interface GameStore {
   enemies: EnemyInstance[];
   bosses: BossInstance[];
   collectiveBars: CollectiveBar[];
+  cooldownsCleared: boolean;
   setCollectiveBars: (bars: CollectiveBar[]) => void;
   setActiveTab: (tab: TabId) => void;
   setImages: (imgs: GameImage[]) => void;
@@ -28,6 +29,7 @@ interface GameStore {
   setBosses: (bosses: BossInstance[]) => void;
   allies: CombatAlly[];
   setAllies: (allies: CombatAlly[]) => void;
+  setCooldownsCleared: (v: boolean) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -42,6 +44,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   bosses: [],
   collectiveBars: [],
   setCollectiveBars: (collectiveBars) => set({ collectiveBars }),
+
+  cooldownsCleared: false,
+  setCooldownsCleared: (v) => set({ cooldownsCleared: v }),
 
   setActiveTab: (tab) =>
     set({ activeTab: tab, hasNewImage: tab === 'mapa' ? false : get().hasNewImage }),

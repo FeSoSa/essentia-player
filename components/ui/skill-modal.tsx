@@ -7,7 +7,7 @@ import { Colors, Fonts } from '@/constants/theme';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { useSkill, applyEnemyDamage, applyBossDamage } from '@/lib/api';
-import { getModifier, formatMod } from '@/lib/rules';
+import { getModifier, formatMod, resolveAtributeMod } from '@/lib/rules';
 import type { Slot, SkillTreeEntry, DamageResult, Attributes } from '@/types';
 
 interface Props {
@@ -17,18 +17,6 @@ interface Props {
   onClose: () => void;
 }
 
-function getSkillMod(categoria: string, attributes: Attributes): { label: string; value: number } | null {
-  const c = (categoria ?? '').toLowerCase();
-  if (c.includes('físic') || c.includes('fisic') || c.includes('força') || c.includes('corpo'))
-    return { label: 'FOR', value: getModifier(attributes.strength) };
-  if (c.includes('mági') || c.includes('magi') || c.includes('intel') || c.includes('éter') || c.includes('eter'))
-    return { label: 'INT', value: getModifier(attributes.intelligence) };
-  if (c.includes('agil') || c.includes('precis'))
-    return { label: 'AGI', value: getModifier(attributes.agility) };
-  if (c.includes('fluxo') || c.includes('flux'))
-    return { label: 'FLX', value: getModifier(attributes.flow) };
-  return null;
-}
 
 function parseDice(text: string): string | null {
   const m = text.match(/\d+[dD]\d+(\s*[+\-]\s*\w+)*/);
@@ -53,14 +41,15 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
   const diceValue = parseInt(diceInput, 10);
   const validDice = !isNaN(diceValue) && diceValue > 0;
 
-  const skillMod = skill ? getSkillMod(skill.categoria ?? '', player.attributes) : null;
   const diceFormula = skill ? parseDice(skill.descricao) : null;
   const maestriaBonus = skill?.maestria?.bonusDano ?? 0;
   const danoBase = skill?.danoBase ?? 0;
-  const baseCalc = validDice && skillMod
-    ? diceValue + skillMod.value + danoBase
-    : validDice
-    ? diceValue + danoBase
+  const equilibrio = skill?.equilibrio ?? null;
+  const modAtributo = skill?.atributo ? resolveAtributeMod(skill.atributo, player.attributes) : 0;
+  const baseCalc = validDice
+    ? equilibrio != null
+      ? danoBase + Math.floor((diceValue * modAtributo) / equilibrio)
+      : danoBase
     : null;
   const damagePreview = baseCalc !== null && maestriaBonus > 0
     ? Math.round(baseCalc * (1 + maestriaBonus))
@@ -179,9 +168,9 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
                     placeholderTextColor={Colors.border}
                     maxLength={3}
                   />
-                  {skillMod && (
+                  {skill?.atributo && equilibrio != null && (
                     <Text style={styles.modText}>
-                      + {skillMod.label} {formatMod(skillMod.value)}
+                      + {skill.atributo} {formatMod(modAtributo)} / {equilibrio}
                     </Text>
                   )}
                   {damagePreview !== null && (

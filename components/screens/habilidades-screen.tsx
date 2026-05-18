@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { SlotGrid } from '@/components/ui/slot-grid';
 import { SlotEditModal } from '@/components/ui/slot-edit-modal';
 import { SkillInfoModal } from '@/components/ui/skill-info-modal';
 import { usePlayerStore } from '@/store/playerStore';
+import { useGameStore } from '@/store/gameStore';
+import { updateSlot } from '@/lib/api';
 import type { Slot, SkillTreeEntry } from '@/types';
 
 type Filter = 'todas' | 'disponivel' | 'desbloqueada' | 'bloqueada';
@@ -18,9 +20,9 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'bloqueada',    label: 'BLOQUEADA'    },
 ];
 
-function skillStatus(s: SkillTreeEntry): 'desbloqueada' | 'disponivel' | 'bloqueada' {
-  if (s.unlocked)            return 'desbloqueada';
-  if (!s.requirementsText)   return 'disponivel';
+function skillStatus(s: SkillTreeEntry, accessibleByEssencia: Set<string>): 'desbloqueada' | 'disponivel' | 'bloqueada' {
+  if (s.unlocked) return 'desbloqueada';
+  if (!s.requirementsText || accessibleByEssencia.has(s.skillId)) return 'disponivel';
   return 'bloqueada';
 }
 
@@ -39,34 +41,67 @@ const STATUS_COLOR: Record<string, string> = {
 export function HabilidadesScreen() {
   const player      = usePlayerStore((s) => s.player)!;
   const skillTree   = usePlayerStore((s) => s.skillTree);
-  const setSkillTree = usePlayerStore((s) => s.setSkillTree);
+  const essencias   = usePlayerStore((s) => s.essencias);
+  const initiative  = useGameStore((s) => s.initiative);
+  const combatActive = initiative.length > 0;
+
+  const accessibleByEssencia = useMemo(() => {
+    const set = new Set<string>();
+    const playerEssenciaIds = new Set(player.essenciasObtidas.map((o) => o.essenciaId));
+    for (const ess of essencias) {
+      const playerHas = playerEssenciaIds.has(ess.id);
+      const parentOwned = ess.type === 'Derivada' && !!ess.parentId && playerEssenciaIds.has(ess.parentId);
+      if (playerHas || parentOwned) {
+        ess.skillIds.forEach((id) => set.add(id));
+      }
+    }
+    return set;
+  }, [player.essenciasObtidas, essencias]);
 
   const [filter, setFilter] = useState<Filter>('todas');
 
-  // Slot edit (equipar/trocar/remover)
+  // Slot edit (equipar — só para slots vazios)
   const [editSlot, setEditSlot]           = useState<Slot | null>(null);
   const [editPreselect, setEditPreselect] = useState<string | undefined>();
 
   // Skill info/detail modal
-  const [infoSkill, setInfoSkill] = useState<SkillTreeEntry | null>(null);
+  const [infoSkill,    setInfoSkill]    = useState<SkillTreeEntry | null>(null);
+  const [infoFromSlot, setInfoFromSlot] = useState<Slot | null>(null);
 
   const skillMap    = new Map(skillTree.map((s) => [s.skillId, s]));
   const equippedIds = new Set(player.slots.filter((s) => s.skillId).map((s) => s.skillId!));
   const cooldownMap = new Map(
     player.slots
-      .filter((s) => s.skillId && s.cooldownRemaining > 0)
+      .filter((s) => combatActive && s.skillId && s.cooldownRemaining > 0)
       .map((s) => [s.skillId!, s.cooldownRemaining])
   );
 
   // Filter + sort: disponivel first, then desbloqueada, then bloqueada
   const STATUS_ORDER = { disponivel: 0, desbloqueada: 1, bloqueada: 2 };
   const visible = skillTree
-    .filter((s) => filter === 'todas' || skillStatus(s) === filter)
-    .sort((a, b) => STATUS_ORDER[skillStatus(a)] - STATUS_ORDER[skillStatus(b)]);
+    .filter((s) => filter === 'todas' || skillStatus(s, accessibleByEssencia) === filter)
+    .sort((a, b) => STATUS_ORDER[skillStatus(a, accessibleByEssencia)] - STATUS_ORDER[skillStatus(b, accessibleByEssencia)]);
 
   function handleSlotEdit(slot: Slot) {
+    if (slot.skillId) {
+      const skill = skillMap.get(slot.skillId);
+      if (skill) {
+        setInfoSkill(skill);
+        setInfoFromSlot(slot);
+        return;
+      }
+    }
     setEditPreselect(undefined);
     setEditSlot(slot);
+  }
+
+  async function handleRemoveFromSlot() {
+    if (!infoFromSlot) return;
+    try {
+      const updated = await updateSlot(player.id, infoFromSlot.id, null);
+      usePlayerStore.getState().setPlayer(updated);
+    } catch { /* silent */ }
+    setInfoFromSlot(null);
   }
 
   function handleEquipFromInfo(skill: SkillTreeEntry) {
@@ -76,7 +111,7 @@ export function HabilidadesScreen() {
   }
 
   function renderSkill({ item: skill }: { item: SkillTreeEntry }) {
-    const status    = skillStatus(skill);
+    const status    = skillStatus(skill, accessibleByEssencia);
     const border    = BORDER_COLOR[status];
     const isLocked  = status === 'bloqueada';
     const hasCooldown = cooldownMap.has(skill.skillId);
@@ -108,6 +143,11 @@ export function HabilidadesScreen() {
             {hasCooldown && (
               <View style={styles.cooldownBadge}>
                 <Text style={styles.cooldownBadgeText}>{cooldownMap.get(skill.skillId)}T</Text>
+              </View>
+            )}
+            {skill.pressaoDice && (
+              <View style={styles.pressaoBadge}>
+                <Text style={styles.pressaoBadgeText}>PRESSÃO</Text>
               </View>
             )}
           </View>
@@ -185,8 +225,9 @@ export function HabilidadesScreen() {
         visible={!!infoSkill}
         skill={infoSkill}
         slots={player.slots}
-        onClose={() => setInfoSkill(null)}
+        onClose={() => { setInfoSkill(null); setInfoFromSlot(null); }}
         onEquipPress={handleEquipFromInfo}
+        onRemovePress={infoFromSlot ? handleRemoveFromSlot : undefined}
       />
 
       <SlotEditModal
@@ -252,5 +293,7 @@ const styles = StyleSheet.create({
   cooldownBadgeText: { fontFamily: Fonts.title, fontSize: 8, color: Colors.danger, letterSpacing: 1 },
 
   maestriaBadgeReady: { backgroundColor: Colors.danger },
+  pressaoBadge:     { backgroundColor: 'rgba(168,85,247,0.15)', borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1, borderWidth: 1, borderColor: '#a855f7' },
+  pressaoBadgeText: { fontFamily: Fonts.title, fontSize: 8, color: '#a855f7', letterSpacing: 1 },
   chevron: { fontSize: 18, color: Colors.muted, lineHeight: 22 },
 });

@@ -1,4 +1,5 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -19,6 +20,8 @@ export function MapaScreen() {
 
   const activeImages = images.filter((i) => i.active);
   const current      = activeImages[currentIndex] ?? null;
+
+  const [fullscreen, setFullscreen] = useState(false);
 
   // ── Zoom / pan state ──
   const scale      = useSharedValue(1);
@@ -102,6 +105,11 @@ export function MapaScreen() {
         </Animated.View>
       </GestureDetector>
 
+      {/* Botão expandir fullscreen */}
+      <TouchableOpacity style={styles.expandBtn} onPress={() => setFullscreen(true)} activeOpacity={0.75}>
+        <MaterialCommunityIcons name="fullscreen" size={20} color="#fff" />
+      </TouchableOpacity>
+
       {/* Botão próxima — só aparece com mais de 1 ativa */}
       {activeImages.length > 1 && (
         <TouchableOpacity
@@ -115,6 +123,27 @@ export function MapaScreen() {
           </Text>
         </TouchableOpacity>
       )}
+
+      {/* Modal fullscreen */}
+      <Modal visible={fullscreen} animationType="fade" onRequestClose={() => setFullscreen(false)} statusBarTranslucent>
+        <View style={styles.fullscreenContainer}>
+          <Image
+            source={{ uri: current.url }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="cover"
+            blurRadius={28}
+          />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(0,0,0,0.35)' }]} />
+          <Image
+            source={{ uri: current.url }}
+            style={StyleSheet.absoluteFillObject}
+            contentFit="contain"
+          />
+          <TouchableOpacity style={styles.closeBtn} onPress={() => setFullscreen(false)} activeOpacity={0.75}>
+            <MaterialCommunityIcons name="close" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -126,6 +155,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', gap: 12,
   },
   emptyText: { fontFamily: Fonts.body, fontSize: 16, color: Colors.muted },
+  expandBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 20,
+    padding: 8,
+  },
   nextBtn: {
     position: 'absolute',
     bottom: 16,
@@ -143,5 +180,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255,255,255,0.8)',
     letterSpacing: 1,
+  },
+  fullscreenContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    padding: 10,
   },
 });

@@ -39,7 +39,7 @@ export interface CharInfo {
   slotsFree: number;
   slotsTotal: number;
   portraitUrl?: string;
-  unarmedDamage?: string;
+  unarmedAttack?: { damageBase: number; attribute: string };
 }
 
 export interface Slot {
@@ -61,8 +61,8 @@ export interface Item {
   // Weapon
   weaponType?: string;
   damageBase?: number;
-  damageDice?: { quantity: number; die: string };
   damageAttribute?: string;
+  equilibrio?: number;
   properties?: string;
   // Armor
   damageReduction?: number;
@@ -87,8 +87,8 @@ export interface WeaponEquip {
   twoHanded?: boolean;
   rarity?: string;
   damageBase?: number;
-  damageDice?: { quantity: number; die: string };
   damageAttribute?: string;
+  equilibrio?: number;
 }
 
 export interface ArmorEquip {
@@ -131,6 +131,7 @@ export interface Essencia {
   skillIds: string[];
   icon?: string;
   color?: string;
+  parentId?: string; // para essências Derivadas
 }
 
 export interface PendingRequest {
@@ -228,8 +229,10 @@ export interface SkillTreeEntry {
     custoAumento: number;  // ex: 0.24 = +24%
     reducaoCusto: number;  // ex: 0.16 = -16%
   };
-  danoFormula?: string;   // ex: "4 + 2d6 + INT"
-  danoBase?: number;      // valor fixo adicionado ao dano antes do dado
+  danoFormula?: string;   // ex: "17 + d20×FOR / 4"
+  danoBase?: number;      // valor fixo de dano base
+  atributo?: string;      // ex: "FOR", "AGI", "FOR/AGI"
+  equilibrio?: number;    // divisor da escala de atributo; null = só dano_base
   cooldownTurns?: number; // turnos de cooldown após uso
   skillType?: string;     // "class" | "weapon" | "essencia" | "mestre"
   pressaoDice?: boolean;  // +1d6 por ponto de Pressão ao usar

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts, RARITY_COLORS, RARITY_LABELS, type Rarity } from '@/constants/theme';
 import { ItemModal } from '@/components/ui/item-modal';
@@ -89,6 +89,7 @@ export function InventarioScreen() {
         {/* Coluna esquerda — equipamento */}
         <View style={styles.equipCol}>
           <Text style={styles.colLabel}>EQUIPAMENTO</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
           {EQUIPMENT_SLOTS.map(({ key, label, icon }) => {
             const equipped = player.equipment[key] as WeaponEquip | undefined;
             const blockedByTwoHanded = key === 'offHand' && mainIsTwoHanded && !equipped;
@@ -126,9 +127,9 @@ export function InventarioScreen() {
                           {ARMOR_DODGE_NOTE[getArmorWeight((equipped as any).armorWeight ?? '')]}
                         </Text>
                       )}
-                      {(key === 'mainHand' || key === 'offHand') && (equipped as WeaponEquip).damageDice && (
+                      {(key === 'mainHand' || key === 'offHand') && (equipped as WeaponEquip).damageBase != null && (
                         <Text style={styles.baseDmgText}>
-                          {weaponDamageFormula(equipped as WeaponEquip)}
+                          {weaponDamageFormula({ damageBase: (equipped as WeaponEquip).damageBase, damageAttribute: (equipped as WeaponEquip).damageAttribute, equilibrio: 4 })}
                         </Text>
                       )}
                       {(() => {
@@ -145,9 +146,9 @@ export function InventarioScreen() {
                   ) : (
                     <>
                       <Text style={styles.textMuted}>— vazio</Text>
-                      {key === 'mainHand' && player.char.unarmedDamage && (
+                      {key === 'mainHand' && player.char.unarmedAttack && (
                         <Text style={styles.baseDmgText}>
-                          desarmado {player.char.unarmedDamage}
+                          desarmado {player.char.unarmedAttack.damageBase} + d20×{player.char.unarmedAttack.attribute}/4
                         </Text>
                       )}
                     </>
@@ -159,6 +160,7 @@ export function InventarioScreen() {
               </TouchableOpacity>
             );
           })}
+          </ScrollView>
         </View>
 
         {/* Coluna direita — inventário */}
