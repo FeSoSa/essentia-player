@@ -27,6 +27,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
   const [step, setStep]       = useState<Step>('target');
   const [hitInput, setHitInput]   = useState('');
   const [dmgInput, setDmgInput]   = useState('');
+  const [isCrit, setIsCrit]       = useState(false);
   const [selectedTarget, setSelectedTarget] = useState<{ id: string; type: 'enemy' | 'boss'; name: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [sending, setSending]   = useState(false);
@@ -45,6 +46,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
     setStep('target');
     setHitInput('');
     setDmgInput('');
+    setIsCrit(false);
     setSelectedTarget(null);
     setPendingId(null);
     setSending(false);
@@ -75,9 +77,10 @@ export function BasicAttackModal({ visible, onClose }: Props) {
   const hitTotal  = validHit ? hitRoll + agiMod : null;
 
   // Damage calculation
-  const dmgRoll   = parseInt(dmgInput, 10);
-  const validDmg  = !isNaN(dmgRoll) && dmgRoll >= 1;
-  const dmgTotal  = validDmg ? Math.max(0, Math.round(dmgBase + (dmgRoll * attrMod) / equil)) : null;
+  const dmgRoll         = parseInt(dmgInput, 10);
+  const validDmg        = !isNaN(dmgRoll) && dmgRoll >= 1;
+  const effectiveDmgRoll = isCrit ? dmgRoll * 2 : dmgRoll;
+  const dmgTotal        = validDmg ? Math.max(0, Math.round(dmgBase + (effectiveDmgRoll * attrMod) / equil)) : null;
 
   async function handleSendDamage() {
     if (!selectedTarget || dmgTotal == null || !player.id) return;
@@ -183,6 +186,9 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                       <Text style={styles.rollBreak}>
                         {hitRoll} {agiMod >= 0 ? `+${agiMod}` : agiMod}
                       </Text>
+                      {hitRoll === 20 && (
+                        <Text style={styles.critBadge}>CRÍTICO!</Text>
+                      )}
                     </>
                   )}
                 </View>
@@ -193,7 +199,11 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionBtn, !validHit && styles.actionBtnDisabled]}
-                  onPress={() => validHit && setStep('damage')}
+                  onPress={() => {
+                    if (!validHit) return;
+                    setIsCrit(hitRoll === 20);
+                    setStep('damage');
+                  }}
                   disabled={!validHit}
                   activeOpacity={0.8}
                 >
@@ -208,6 +218,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
             <View style={styles.stepBlock}>
               <Text style={styles.stepLabel}>ROLAR DANO</Text>
               <Text style={styles.hintText}>{damageFormula}</Text>
+              {isCrit && <Text style={styles.critHint}>⚡ Crítico — dado dobrado</Text>}
               <View style={styles.numpadRow}>
                 <NumPad value={dmgInput} onChange={setDmgInput} />
                 <View style={styles.numpadInfo}>
@@ -217,7 +228,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                       <Text style={[styles.rollValue, { color: Colors.danger }]}>{dmgTotal}</Text>
                       {attrMod > 0 && (
                         <Text style={styles.rollBreak}>
-                          {dmgBase} + {dmgRoll}×{attrMod}/{equil}
+                          {dmgBase} + {isCrit ? `${dmgRoll}×2` : dmgRoll}×{attrMod}/{equil}
                         </Text>
                       )}
                     </>
@@ -431,5 +442,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     textAlign: 'center',
+  },
+  critBadge: {
+    fontFamily: Fonts.title,
+    fontSize: 11,
+    color: Colors.gold,
+    letterSpacing: 2,
+  },
+  critHint: {
+    fontFamily: Fonts.title,
+    fontSize: 10,
+    color: Colors.gold,
+    letterSpacing: 1,
   },
 });

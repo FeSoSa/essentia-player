@@ -17,6 +17,10 @@ const ATTR_ABBREV: Record<string, string> = {
 const WEAPON_TYPE_LABEL: Record<string, string> = {
   curta: 'Arma curta', média: 'Arma média', pesada: 'Arma pesada',
   ranged: 'Ranged', unarmed: 'Desarmado',
+  espadas: 'Espadas', rapieiras: 'Rapieiras', alabardas: 'Alabardas',
+  lancas: 'Lanças', 'machados-de-guerra': 'Machados de guerra', martelos: 'Martelos',
+  'armas-colossais': 'Armas colossais', adagas: 'Adagas', garras: 'Garras',
+  'a-distancia': 'À distância', 'luvas-manoplas': 'Luvas & manoplas', escudos: 'Escudos',
 };
 
 const ARMOR_WEIGHT_LABEL: Record<string, string> = {
@@ -38,7 +42,8 @@ interface Props {
 }
 
 export function ItemModal({ visible, item, mode, onClose }: Props) {
-  const playerId = usePlayerStore((s) => s.player?.id);
+  const player = usePlayerStore((s) => s.player);
+  const playerId = player?.id;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
@@ -69,6 +74,19 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
   const isWeapon = item.type === 'weapon';
   const isArmor  = item.type === 'armor';
   const hasBonus = item.attributeBonus && Object.keys(item.attributeBonus).length > 0;
+
+  const effectiveAttrs = player?.effectiveAttributes ?? player?.attributes;
+  const reqsMet = !item.requirements || (() => {
+    const req = item.requirements;
+    if (req.level && (player?.char.level ?? 0) < req.level) return false;
+    if (req.attributes && effectiveAttrs) {
+      for (const [attr, needed] of Object.entries(req.attributes)) {
+        if ((effectiveAttrs[attr as keyof typeof effectiveAttrs] ?? 0) < needed) return false;
+      }
+    }
+    return true;
+  })();
+
   const dmg      = isWeapon && (item.damageBase || item.damageAttribute)
     ? weaponDamageFormula({ damageBase: item.damageBase, damageAttribute: item.damageAttribute, equilibrio: item.equilibrio })
     : null;
@@ -164,7 +182,34 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
               </View>
             )}
 
-            {(dmg || isArmor || hasBonus || item.properties) && <View style={styles.divider} />}
+            {/* Pré-requisitos */}
+            {item.requirements && (
+              <View style={[styles.statRow, { alignItems: 'flex-start' }]}>
+                <Text style={styles.statLabel}>REQUER</Text>
+                <View style={styles.bonusList}>
+                  {item.requirements.level != null && (
+                    <View style={[styles.bonusPill, { backgroundColor: (!player || player.char.level < item.requirements.level) ? Colors.danger + '33' : Colors.surface }]}>
+                      <Text style={[styles.bonusPillText, { color: (!player || player.char.level < item.requirements.level) ? Colors.danger : Colors.muted }]}>
+                        Nível {item.requirements.level}
+                      </Text>
+                    </View>
+                  )}
+                  {item.requirements.attributes && Object.entries(item.requirements.attributes).map(([attr, val]) => {
+                    const have = (effectiveAttrs?.[attr as keyof typeof effectiveAttrs] ?? 0) as number;
+                    const unmet = have < val;
+                    return (
+                      <View key={attr} style={[styles.bonusPill, { backgroundColor: unmet ? Colors.danger + '33' : Colors.surface }]}>
+                        <Text style={[styles.bonusPillText, { color: unmet ? Colors.danger : Colors.muted }]}>
+                          {ATTR_ABBREV[attr] ?? attr.toUpperCase()} {val}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
+            {(dmg || isArmor || hasBonus || item.properties || item.requirements) && <View style={styles.divider} />}
 
             {/* Descrição */}
             {item.desc ? (

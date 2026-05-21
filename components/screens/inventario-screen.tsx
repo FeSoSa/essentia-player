@@ -45,11 +45,34 @@ export function InventarioScreen() {
   const [equipError, setEquipError] = useState<string | null>(null);
 
   const mainIsTwoHanded = player.equipment.mainHand?.twoHanded === true;
+  const effectiveAttrs = player.effectiveAttributes ?? player.attributes;
+
+  function checkRequirements(item: Item): string | null {
+    const req = item.requirements;
+    if (!req) return null;
+    if (req.level != null && player.char.level < req.level)
+      return `Requer nível ${req.level} (atual: ${player.char.level})`;
+    if (req.attributes) {
+      for (const [attr, needed] of Object.entries(req.attributes)) {
+        const have = (effectiveAttrs[attr as keyof typeof effectiveAttrs] ?? 0) as number;
+        if (have < needed) {
+          const abbrev = { strength:'FOR', agility:'AGI', intelligence:'INT', resistance:'RES', flow:'FLX', wisdom:'SAB', presence:'PRE', defense:'DEF' }[attr] ?? attr.toUpperCase();
+          return `Requer ${abbrev} ${needed} (atual: ${have})`;
+        }
+      }
+    }
+    return null;
+  }
 
   async function handleEquip(item: Item) {
     setMenu(null);
     if (mainIsTwoHanded && item.equipSlot === 'offHand') {
       setEquipError('Arma principal é de duas mãos — offhand bloqueada.');
+      return;
+    }
+    const reqError = checkRequirements(item);
+    if (reqError) {
+      setEquipError(reqError);
       return;
     }
     setEquipError(null);
@@ -175,26 +198,35 @@ export function InventarioScreen() {
 
           <View style={styles.grid}>
             {/* Filled item slots */}
-            {player.items.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.gridSlotFilled, { borderColor: rarityColor(item.rarity) }]}
-                onPress={() => setMenu({ item })}
-                activeOpacity={0.7}
-              >
-                <MaterialCommunityIcons
-                  name={resolveIcon(item.icon)}
-                  size={16}
-                  color={rarityColor(item.rarity)}
-                />
-                <Text style={styles.itemName} numberOfLines={2}>
-                  {item.name.slice(0, 12)}
-                </Text>
-                <View style={styles.qtdBadge}>
-                  <Text style={styles.qtdText}>{item.qty}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+            {player.items.map((item) => {
+              const isEquipable = item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory';
+              const reqBlocked = isEquipable && checkRequirements(item) !== null;
+              return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.gridSlotFilled, { borderColor: rarityColor(item.rarity) }]}
+                  onPress={() => setMenu({ item })}
+                  activeOpacity={0.7}
+                >
+                  <MaterialCommunityIcons
+                    name={resolveIcon(item.icon)}
+                    size={16}
+                    color={reqBlocked ? Colors.muted : rarityColor(item.rarity)}
+                  />
+                  <Text style={[styles.itemName, reqBlocked && { color: Colors.muted }]} numberOfLines={2}>
+                    {item.name.slice(0, 12)}
+                  </Text>
+                  <View style={styles.qtdBadge}>
+                    <Text style={styles.qtdText}>{item.qty}</Text>
+                  </View>
+                  {reqBlocked && (
+                    <View style={styles.lockOverlay}>
+                      <MaterialCommunityIcons name="lock" size={10} color={Colors.muted} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
             {/* Empty slots to fill to 16 */}
             {Array.from({ length: Math.max(0, 16 - player.items.length) }).map((_, i) => (
               <View key={`empty-${i}`} style={styles.gridSlotEmpty}>
@@ -292,6 +324,9 @@ const styles = StyleSheet.create({
   qtdBadge: {
     position: 'absolute', bottom: 3, right: 4,
     backgroundColor: Colors.emberDim, borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1,
+  },
+  lockOverlay: {
+    position: 'absolute', top: 3, right: 4,
   },
   qtdText: { fontFamily: Fonts.title, fontSize: 9, color: Colors.ember },
   slotNumber: { fontFamily: Fonts.title, fontSize: 12, color: Colors.border },

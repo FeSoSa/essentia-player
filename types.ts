@@ -49,6 +49,11 @@ export interface Slot {
   cooldownRemaining: number;
 }
 
+export interface ItemRequirements {
+  level?: number;
+  attributes?: Record<string, number>;
+}
+
 export interface Item {
   id: string;
   name: string;
@@ -70,6 +75,7 @@ export interface Item {
   // Shared
   attributeBonus?: Record<string, number>;
   rarity?: string;
+  requirements?: ItemRequirements;
 }
 
 export interface DamageResult {

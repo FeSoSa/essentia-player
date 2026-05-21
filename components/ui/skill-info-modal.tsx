@@ -73,6 +73,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   // Use-skill state
   const [useStep, setUseStep] = useState<'target' | 'hit' | 'damage' | 'result'>('target');
   const [usageStarted, setUsageStarted] = useState(false); // ignora cooldown após iniciar o fluxo
+  const [isCrit, setIsCrit] = useState(false);
   const [hitInput, setHitInput] = useState('');
   const [bonusInput, setBonusInput] = useState('');
   const [hitPadMode, setHitPadMode] = useState<'d20' | 'bonus'>('d20');
@@ -128,9 +129,10 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const pressaoValue  = parseInt(pressaoInput, 10) || 0;
   const equilibrio    = skill?.equilibrio ?? null;
   const modAtributo   = skill?.atributo ? resolveAtributeMod(skill.atributo, player.attributes) : 0;
+  const effectiveDiceValue = isCrit ? diceValue * 2 : diceValue;
   const baseDamage    = validDice
     ? equilibrio != null
-      ? danoBase + Math.floor((diceValue * modAtributo) / equilibrio)
+      ? danoBase + Math.floor((effectiveDiceValue * modAtributo) / equilibrio)
       : danoBase
     : null;
   const maestriaBonus = maestria?.bonusDano ?? 0;
@@ -146,6 +148,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     setError(null);
     setUseStep('target');
     setUsageStarted(false);
+    setIsCrit(false);
     setHitInput('');
     setBonusInput('');
     setHitPadMode('d20');
@@ -557,6 +560,9 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                     {hitTotal !== null && (
                       <Text style={[styles.stepBig, { fontSize: 32, color: Colors.tealBright }]}>{hitTotal}</Text>
                     )}
+                    {hitValue === 20 && (
+                      <Text style={styles.critBadge}>CRÍTICO!</Text>
+                    )}
                   </View>
                 </View>
               )}
@@ -576,6 +582,9 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                     <View style={styles.stepSide}>
                       {(skill?.danoFormula || diceFormula) && (
                         <Text style={styles.formulaHint}>⚔ {skill?.danoFormula ?? diceFormula}</Text>
+                      )}
+                      {isCrit && (
+                        <Text style={styles.critHint}>⚡ Crítico — dado dobrado</Text>
                       )}
                       {skill.custo && skill.custo !== '—' && (
                         <Text style={styles.stepSub}>CUSTO  {skill.custo}</Text>
@@ -741,7 +750,11 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: '#16a34a' }, !validHit && styles.btnDisabled]}
-                  onPress={() => validHit && setUseStep('damage')}
+                  onPress={() => {
+                    if (!validHit) return;
+                    setIsCrit(hitValue === 20);
+                    setUseStep('damage');
+                  }}
                   disabled={!validHit}
                   activeOpacity={0.7}
                 >
@@ -990,4 +1003,6 @@ const styles = StyleSheet.create({
   applyBtnText: { fontFamily: Fonts.title, fontSize: 10, color: '#fff', letterSpacing: 2 },
 
   actionBtnUse: { backgroundColor: Colors.ember },
+  critBadge: { fontFamily: Fonts.title, fontSize: 11, color: Colors.gold, letterSpacing: 2 },
+  critHint:  { fontFamily: Fonts.title, fontSize: 10, color: Colors.gold, letterSpacing: 1 },
 });
