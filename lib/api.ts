@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getServerIp, buildHttpBase } from './storage';
-import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar } from '@/types';
+import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar, MultiTargetDamagePayload } from '@/types';
 
 const api = axios.create();
 
@@ -136,6 +136,13 @@ export async function requestDamage(
   }
 ): Promise<void> {
   await api.post(`/api/players/${playerId}/damage-request`, opts);
+}
+
+export async function requestMultiDamage(
+  playerId: string,
+  payload: MultiTargetDamagePayload
+): Promise<void> {
+  await api.post(`/api/players/${playerId}/multi-damage-request`, payload);
 }
 
 export async function requestSobrecarga(playerId: string, nivel: number): Promise<void> {

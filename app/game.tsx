@@ -5,11 +5,12 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getCombatAllies, getImages, getCollectiveBars, getTurnState } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getCombatAllies, getImages, getCollectiveBars, getTurnState, updateSlot } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
 import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, CombatAlly } from '@/types';
 import { useSobrecargaStore } from '@/store/sobrecargaStore';
+import { findInvalidEquippedSlots } from '@/lib/skill-validation';
 // GameImage used in STOMP handler type annotation below
 
 export default function GameScreen() {
@@ -25,6 +26,7 @@ export default function GameScreen() {
   const incrementTurn = useGameStore((s) => s.incrementTurn);
   const setDamageResult = useGameStore((s) => s.setDamageResult);
   const setCooldownsCleared = useGameStore((s) => s.setCooldownsCleared);
+  const resetTurnActions = useGameStore((s) => s.resetTurnActions);
   const setEnemies = useGameStore((s) => s.setEnemies);
   const setBosses = useGameStore((s) => s.setBosses);
   const setAllies = useGameStore((s) => s.setAllies);
@@ -103,12 +105,25 @@ export default function GameScreen() {
         if (entries.length === 0) {
           clearAllCooldowns();
           setCooldownsCleared(true);
+        } else {
+          // Reset explícito ao (re)iniciar combate, cobrindo race conditions com /topic/turn
+          resetTurnActions();
         }
       });
 
       stomp.subscribe('/topic/turn', (msg) => {
         if (!mounted) return;
         incrementTurn();
+        const { initiative, turnCount } = useGameStore.getState();
+        const currentPlayerId = usePlayerStore.getState().player?.id;
+        if (initiative.length > 0 && currentPlayerId) {
+          // (turnCount - 1) corrige o off-by-one: incrementTurn já avançou antes da checagem
+          const idx = (turnCount - 1 + initiative.length) % initiative.length;
+          const entry = initiative[idx];
+          if (entry?.playerId === currentPlayerId) {
+            resetTurnActions();
+          }
+        }
       });
 
       stomp.subscribe('/topic/combat/enemies', (msg) => {
@@ -171,8 +186,12 @@ export default function GameScreen() {
       try {
         const turnState = await getTurnState();
         if (mounted && turnState.initiative.length > 0) {
-          setInitiative(turnState.initiative);
-          setTurnCount(turnState.totalTurns);
+          useGameStore.setState({
+            initiative: turnState.initiative,
+            turnCount: turnState.totalTurns,
+            mainActionUsed: false,
+            bonusActionUsed: false,
+          });
         }
       } catch {
         // non-critical
@@ -186,6 +205,21 @@ export default function GameScreen() {
       disconnectStomp();
     };
   }, []);
+
+  // Auto-desequipa skills inválidas quando equipment ou essências mudam (ex: DM remove essência via WebSocket)
+  useEffect(() => {
+    if (!player) return;
+    const { skillTree, essencias } = usePlayerStore.getState();
+    if (!skillTree.length) return;
+    const invalidSlots = findInvalidEquippedSlots(player, skillTree, essencias);
+    if (invalidSlots.length === 0) return;
+    Promise.all(invalidSlots.map((s) => updateSlot(player.id, s.id, null)))
+      .then((results) => {
+        const final = results[results.length - 1];
+        if (final) setPlayer(final);
+      })
+      .catch(() => {});
+  }, [player?.equipment, player?.essenciasObtidas]);
 
   if (!player) {
     return (

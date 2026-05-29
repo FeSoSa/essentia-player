@@ -47,11 +47,50 @@ export interface Slot {
   type: 'class' | 'free' | 'human_bonus';
   skillId?: string;
   cooldownRemaining: number;
+  toggleActive?: boolean;
 }
 
 export interface ItemRequirements {
   level?: number;
   attributes?: Record<string, number>;
+}
+
+export interface AutoEffect {
+  trigger: string;
+  type: string;
+  value?: number;
+}
+
+export interface OnExpireEffect {
+  name: string;
+  desc: string;
+  durationTurns: number;
+  icon?: string;
+  color?: string;
+  instantHealHp?: number;
+  instantHealFlow?: number;
+  instantDamageHp?: number;
+  attributeBonus?: Record<string, number>;
+  effects?: AutoEffect[];
+  hitBonus?: number;
+  attackBonus?: number;
+  damageBonus?: number;
+}
+
+export interface OnUseEffect {
+  name: string;
+  desc: string;
+  durationTurns: number;
+  icon?: string;
+  color?: string;
+  instantHealHp?: number;
+  instantHealFlow?: number;
+  attributeBonus?: Record<string, number>;
+  effects?: AutoEffect[];
+  hitBonus?: number;
+  attackBonus?: number;
+  damageBonus?: number;
+  onExpire?: OnExpireEffect;
 }
 
 export interface Item {
@@ -76,6 +115,7 @@ export interface Item {
   attributeBonus?: Record<string, number>;
   rarity?: string;
   requirements?: ItemRequirements;
+  onUseEffect?: OnUseEffect;
 }
 
 export interface DamageResult {
@@ -85,10 +125,21 @@ export interface DamageResult {
   cooldownSet: number;
 }
 
+export interface MultiTargetDamagePayload {
+  requestId: string;
+  targets: Array<{
+    targetId: string;
+    targetType: 'enemy' | 'boss';
+    targetName: string;
+    damage: number;
+  }>;
+  costs: Record<string, number>;
+}
+
 export interface WeaponEquip {
   id: string;
   name: string;
-  type: string;
+  weaponType: string;
   icon?: string;
   twoHanded?: boolean;
   rarity?: string;
@@ -154,6 +205,10 @@ export interface StatusEffect {
   icon?: string;
   color?: string;
   durationTurns: number;
+  hitBonus?: number;
+  attackBonus?: number;
+  damageBonus?: number;
+  onExpire?: OnExpireEffect;
 }
 
 export interface CustomBar {
@@ -239,9 +294,21 @@ export interface SkillTreeEntry {
   danoBase?: number;      // valor fixo de dano base
   atributo?: string;      // ex: "FOR", "AGI", "FOR/AGI"
   equilibrio?: number;    // divisor da escala de atributo; null = só dano_base
-  cooldownTurns?: number; // turnos de cooldown após uso
-  skillType?: string;     // "class" | "weapon" | "essencia" | "mestre"
-  pressaoDice?: boolean;  // +1d6 por ponto de Pressão ao usar
+  cooldownTurns?: number;    // turnos de cooldown após uso
+  skillType?: string;        // "class" | "weapon" | "essencia" | "mestre"
+  actionType?: 'main' | 'bonus' | 'both';
+  pressaoDice?: boolean;
+  toggle?: boolean;
+  critThreshold?: number;
+  buffDurationTurns?: number;
+  hitBonus?: number;
+  attackBonus?: number;
+  damageBonus?: number;
+  multiTarget?: {
+    maxTargets: number;
+    damageMode: 'igual' | 'distribuido' | 'especifico';
+    specificDamage?: number;
+  };
 }
 
 // Game state types (from WebSocket topics)

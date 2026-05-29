@@ -71,16 +71,18 @@ export function BasicAttackModal({ visible, onClose }: Props) {
   const equil    = weapon ? (weapon.equilibrio ?? 4) : 4;
   const dmgBase  = weapon ? (weapon.damageBase ?? 0) : (unarmed?.damageBase ?? 0);
 
+  const hitBonusTotal    = player.statusEffects.reduce((s, e) => s + (e.hitBonus    ?? 0), 0);
+  const damageBonusTotal = player.statusEffects.reduce((s, e) => s + (e.damageBonus ?? 0), 0);
+
   // Hit calculation
   const hitRoll   = parseInt(hitInput, 10);
   const validHit  = !isNaN(hitRoll) && hitRoll >= 1;
-  const hitTotal  = validHit ? hitRoll + agiMod : null;
+  const hitTotal  = validHit ? hitRoll + agiMod + hitBonusTotal : null;
 
   // Damage calculation
-  const dmgRoll         = parseInt(dmgInput, 10);
-  const validDmg        = !isNaN(dmgRoll) && dmgRoll >= 1;
-  const effectiveDmgRoll = isCrit ? dmgRoll * 2 : dmgRoll;
-  const dmgTotal        = validDmg ? Math.max(0, Math.round(dmgBase + (effectiveDmgRoll * attrMod) / equil)) : null;
+  const dmgRoll          = parseInt(dmgInput, 10);
+  const validDmg         = !isNaN(dmgRoll) && dmgRoll >= 1;
+  const dmgTotal = validDmg ? Math.max(0, Math.round((isCrit ? dmgBase * 2 : dmgBase) + (dmgRoll * attrMod) / equil) + damageBonusTotal) : null;
 
   async function handleSendDamage() {
     if (!selectedTarget || dmgTotal == null || !player.id) return;
@@ -174,7 +176,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
             <View style={styles.stepBlock}>
               <Text style={styles.stepLabel}>ROLAR ACERTO</Text>
               <Text style={styles.hintText}>
-                d20 {agiMod >= 0 ? `+${agiMod}` : agiMod} (AGI) vs DEF do alvo
+                d20 {agiMod >= 0 ? `+${agiMod}` : agiMod} (AGI){hitBonusTotal !== 0 ? ` +${hitBonusTotal} (efeito)` : ''} vs DEF do alvo
               </Text>
               <View style={styles.numpadRow}>
                 <NumPad value={hitInput} onChange={setHitInput} />
@@ -184,7 +186,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                       <Text style={styles.rollLabel}>TOTAL</Text>
                       <Text style={styles.rollValue}>{hitTotal}</Text>
                       <Text style={styles.rollBreak}>
-                        {hitRoll} {agiMod >= 0 ? `+${agiMod}` : agiMod}
+                        {hitRoll} {agiMod >= 0 ? `+${agiMod}` : agiMod}{hitBonusTotal !== 0 ? ` +${hitBonusTotal}` : ''}
                       </Text>
                       {hitRoll === 20 && (
                         <Text style={styles.critBadge}>CRÍTICO!</Text>
@@ -228,7 +230,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                       <Text style={[styles.rollValue, { color: Colors.danger }]}>{dmgTotal}</Text>
                       {attrMod > 0 && (
                         <Text style={styles.rollBreak}>
-                          {dmgBase} + {isCrit ? `${dmgRoll}×2` : dmgRoll}×{attrMod}/{equil}
+                          {isCrit ? `${dmgBase}×2 + ${dmgRoll}×${attrMod}/${equil}` : `${dmgBase} + ${dmgRoll}×${attrMod}/${equil}`}
                         </Text>
                       )}
                     </>

@@ -88,6 +88,9 @@ export function GeralScreen() {
     ? (SOBRECARGA_LEVELS.find((l) => l.nivel === player.sobrecargaNivel)?.bonus ?? 0)
     : 0;
 
+  const mainActionUsed  = useGameStore((s) => s.mainActionUsed);
+  const bonusActionUsed = useGameStore((s) => s.bonusActionUsed);
+
   const enemies = useGameStore((s) => s.enemies);
   const bosses  = useGameStore((s) => s.bosses);
   const allies  = useGameStore((s) => s.allies);
@@ -486,28 +489,52 @@ export function GeralScreen() {
         function renderSlot(slot: typeof player.slots[0] | null, key: string) {
           if (!slot) return <View key={key} style={[styles.slotBox, styles.slotEmpty]} />;
           const skill = slot.skillId ? skillMap.get(slot.skillId) : undefined;
-          const onCd = combatActive && slot.cooldownRemaining > 0;
+          const isToggle = !!skill?.toggle;
+          const isToggleOn = isToggle && !!slot.toggleActive;
+          const onCd = combatActive && slot.cooldownRemaining > 0 && !isToggle;
           const pressable = !!skill && !onCd && combatActive;
           return (
             <TouchableOpacity
               key={key}
-              style={[styles.slotBox, onCd && styles.slotOnCd, !skill && styles.slotEmpty]}
+              style={[
+                styles.slotBox,
+                skill?.actionType === 'bonus' && styles.slotActionBonus,
+                skill?.actionType === 'both'  && styles.slotActionBoth,
+                onCd        && styles.slotOnCd,
+                !skill      && styles.slotEmpty,
+                isToggleOn  && styles.slotToggleOn,
+              ]}
               onPress={pressable ? () => { setSkillModalSlot(slot); setSkillModalSkill(skill!); } : undefined}
               activeOpacity={pressable ? 0.7 : 1}
               disabled={!pressable}
             >
               <Text style={styles.slotText}>{skill ? skill.nome : ''}</Text>
               {onCd && <Text style={styles.slotCdBadge}>{slot.cooldownRemaining}t</Text>}
+              {isToggleOn && <Text style={styles.slotToggleBadge}>ON</Text>}
             </TouchableOpacity>
           );
         }
 
         return (
-          <View style={styles.bottomRow}>
-            {classGrid.map((s, i) => renderSlot(s, `c-${i}`))}
-            <View style={styles.slotDivider} />
-            {bonusGrid.map((s, i) => renderSlot(s, `b-${i}`))}
-          </View>
+          <>
+            {combatActive && (
+              <View style={styles.actionIndicatorRow}>
+                <View style={styles.actionIndicator}>
+                  <Text style={[styles.actionDot, mainActionUsed && styles.actionDotUsed]}>●</Text>
+                  <Text style={[styles.actionLabel, mainActionUsed && styles.actionLabelUsed]}>Ação Principal</Text>
+                </View>
+                <View style={styles.actionIndicator}>
+                  <Text style={[styles.actionDot, bonusActionUsed && styles.actionDotUsed]}>●</Text>
+                  <Text style={[styles.actionLabel, bonusActionUsed && styles.actionLabelUsed]}>Ação Bônus</Text>
+                </View>
+              </View>
+            )}
+            <View style={styles.bottomRow}>
+              {classGrid.map((s, i) => renderSlot(s, `c-${i}`))}
+              <View style={styles.slotDivider} />
+              {bonusGrid.map((s, i) => renderSlot(s, `b-${i}`))}
+            </View>
+          </>
         );
       })()}
 
@@ -940,6 +967,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239,68,68,0.08)',
     opacity: 1,
   },
+  slotToggleOn: {
+    borderColor: Colors.tealBright,
+    backgroundColor: 'rgba(45,212,191,0.12)',
+  },
+  slotToggleBadge: {
+    fontFamily: Fonts.title,
+    fontSize: 7,
+    color: Colors.tealBright,
+    letterSpacing: 1,
+  },
   slotText: {
     fontFamily: Fonts.body,
     fontSize: 9,
@@ -950,6 +987,44 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.title,
     fontSize: 8,
     color: Colors.danger,
+  },
+  slotActionBonus: {
+    borderColor: '#f97316',
+    backgroundColor: 'rgba(249,115,22,0.08)',
+  },
+  slotActionBoth: {
+    borderColor: '#f97316',
+    backgroundColor: 'rgba(249,115,22,0.08)',
+  },
+
+  // ── Indicador de ações do turno ──
+  actionIndicatorRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingTop: 5,
+    paddingBottom: 2,
+  },
+  actionIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionDot: {
+    fontSize: 8,
+    color: Colors.tealBright,
+  },
+  actionDotUsed: {
+    color: Colors.danger,
+  },
+  actionLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 9,
+    color: Colors.tealBright,
+  },
+  actionLabelUsed: {
+    color: Colors.danger,
+    textDecorationLine: 'line-through',
   },
 
   // ── Bars panel (centro, flex) ──

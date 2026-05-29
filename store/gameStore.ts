@@ -30,6 +30,11 @@ interface GameStore {
   allies: CombatAlly[];
   setAllies: (allies: CombatAlly[]) => void;
   setCooldownsCleared: (v: boolean) => void;
+  mainActionUsed: boolean;
+  bonusActionUsed: boolean;
+  setMainActionUsed: (v: boolean) => void;
+  setBonusActionUsed: (v: boolean) => void;
+  resetTurnActions: () => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -82,6 +87,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setInitiative: (entries) => set({
     initiative: entries,
     turnCount: 0,
+    mainActionUsed: false,
+    bonusActionUsed: false,
   }),
 
   setTurnCount: (count: number) => set({ turnCount: count }),
@@ -92,4 +99,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setBosses: (bosses) => set({ bosses }),
   allies: [],
   setAllies: (allies) => set({ allies }),
+  mainActionUsed: false,
+  bonusActionUsed: false,
+  setMainActionUsed: (v) => set({ mainActionUsed: v }),
+  setBonusActionUsed: (v) => set({ bonusActionUsed: v }),
+  resetTurnActions: () => set({ mainActionUsed: false, bonusActionUsed: false }),
 }));

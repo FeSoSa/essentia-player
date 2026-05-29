@@ -4,9 +4,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts, RARITY_COLORS, RARITY_LABELS, type Rarity } from '@/constants/theme';
 import { ItemModal } from '@/components/ui/item-modal';
 import { resolveIcon } from '@/components/ui/game-icon';
-import { equipItem, unequipItem } from '@/lib/api';
+import { equipItem, unequipItem, updateSlot } from '@/lib/api';
 import { usePlayerStore } from '@/store/playerStore';
 import { getArmorWeight, weaponDamageFormula } from '@/lib/rules';
+import { findInvalidEquippedSlots } from '@/lib/skill-validation';
 import type { Item, WeaponEquip } from '@/types';
 
 function rarityColor(rarity?: string): string {
@@ -64,6 +65,19 @@ export function InventarioScreen() {
     return null;
   }
 
+  async function autoUnequipInvalidSkills(updatedPlayer: import('@/types').Player) {
+    const { skillTree, essencias } = usePlayerStore.getState();
+    const invalidSlots = findInvalidEquippedSlots(updatedPlayer, skillTree, essencias);
+    if (invalidSlots.length === 0) return;
+    try {
+      const results = await Promise.all(
+        invalidSlots.map((s) => updateSlot(updatedPlayer.id, s.id, null))
+      );
+      const final = results[results.length - 1];
+      if (final) setPlayer(final);
+    } catch { /* silent — o estado do servidor é fonte de verdade */ }
+  }
+
   async function handleEquip(item: Item) {
     setMenu(null);
     if (mainIsTwoHanded && item.equipSlot === 'offHand') {
@@ -79,6 +93,7 @@ export function InventarioScreen() {
     try {
       const updated = await equipItem(player.id, item.id);
       setPlayer(updated);
+      await autoUnequipInvalidSkills(updated);
     } catch (e: any) {
       setEquipError(e?.response?.data?.message ?? 'Erro ao equipar item.');
     }
@@ -88,6 +103,7 @@ export function InventarioScreen() {
     try {
       const updated = await unequipItem(player.id, slotKey);
       setPlayer(updated);
+      await autoUnequipInvalidSkills(updated);
     } catch (e: any) {
       setEquipError(e?.response?.data?.message ?? 'Erro ao desequipar item.');
     }

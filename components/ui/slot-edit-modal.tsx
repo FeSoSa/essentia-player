@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
-  ActivityIndicator, StyleSheet,
+  ActivityIndicator, StyleSheet, useWindowDimensions,
 } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { updateSlot } from '@/lib/api';
 import { usePlayerStore } from '@/store/playerStore';
+import { computeAccessibleEssenciaSkills, isSkillEquippable } from '@/lib/skill-validation';
 import type { Slot, SkillTreeEntry } from '@/types';
 
 interface Props {
   visible: boolean;
   slot: Slot | null;
   skillTree: SkillTreeEntry[];
-  preselectedSkillId?: string; // abre já com foco nessa skill
+  preselectedSkillId?: string;
   onClose: () => void;
 }
 
@@ -22,33 +23,75 @@ const SLOT_LABEL: Record<string, string> = {
   human_bonus: 'SLOT BÔNUS',
 };
 
+type TypeFilter = 'todas' | 'geral' | 'classe' | 'essencia' | 'arma';
+
+const TYPE_FILTERS: { id: TypeFilter; label: string }[] = [
+  { id: 'todas',    label: 'TODAS'    },
+  { id: 'geral',    label: 'GERAL'    },
+  { id: 'classe',   label: 'CLASSE'   },
+  { id: 'essencia', label: 'ESSÊNCIA' },
+  { id: 'arma',     label: 'ARMA'     },
+];
+
+function skillTypeGroup(s: SkillTreeEntry): TypeFilter {
+  if (s.skillType === 'essencia') return 'essencia';
+  if (s.skillType === 'weapon')   return 'arma';
+  if (s.skillType === 'class' && s.categoria !== 'Geral') return 'classe' as TypeFilter;
+  return 'geral';
+}
+
+function ActionFlag({ type }: { type?: string }) {
+  if (!type) return null;
+  const t = (label: string) => <Text style={[styles.flagText, { color: Colors.ember }]}>{label}</Text>;
+  if (type === 'main')  return <View style={[styles.flag, styles.flagAction]}>{t('PRINCIPAL')}</View>;
+  if (type === 'bonus') return <View style={[styles.flag, styles.flagAction]}>{t('BÔNUS')}</View>;
+  if (type === 'both')  return (
+    <>
+      <View style={[styles.flag, styles.flagAction]}>{t('PRINCIPAL')}</View>
+      <View style={[styles.flag, styles.flagAction]}>{t('BÔNUS')}</View>
+    </>
+  );
+  return null;
+}
+
 export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, onClose }: Props) {
+  const { height: screenHeight } = useWindowDimensions();
   const player    = usePlayerStore((s) => s.player)!;
+  const essencias = usePlayerStore((s) => s.essencias);
   const setPlayer = usePlayerStore((s) => s.setPlayer);
   const [loading, setLoading] = useState<string | null>(null);
   const [error,   setError]   = useState<string | null>(null);
-
-  const [catFilter, setCatFilter] = useState<string>('todas');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('todas');
 
   const equippedIds  = new Set(player.slots.filter((s) => s.skillId).map((s) => s.skillId!));
   const currentSkill = slot?.skillId ? skillTree.find((s) => s.skillId === slot.skillId) : null;
+  const accessibleEssenciaSkills = computeAccessibleEssenciaSkills(player.essenciasObtidas, essencias);
 
-  // Habilidades disponíveis: desbloqueadas, não em outro slot, e com tipo compatível com o slot
   const allAvailable = skillTree.filter((s) => {
-    if (!s.unlocked || s.skillId === slot?.skillId || equippedIds.has(s.skillId)) return false;
-    if (slot?.type === 'class') return s.skillType === 'class';
-    return true; // free e human_bonus aceitam qualquer skill
+    // Only show skills the player has actually unlocked
+    if (!s.unlocked) return false;
+    if (s.skillId === slot?.skillId || equippedIds.has(s.skillId)) return false;
+    if (slot?.type === 'class') return s.skillType === 'class' && s.categoria === player.char.skillClass;
+    if (!isSkillEquippable(s, player.equipment, accessibleEssenciaSkills)) return false;
+    return true;
   });
 
-  const categories = ['todas', ...Array.from(new Set(allAvailable.map((s) => s.categoria).filter(Boolean)))];
+  const available = allAvailable.filter((s) => {
+    if (typeFilter !== 'todas' && skillTypeGroup(s) !== typeFilter) return false;
+    return true;
+  });
 
-  const available = allAvailable.filter((s) =>
-    catFilter === 'todas' || s.categoria === catFilter
-  );
+  const countByType: Record<TypeFilter, number> = {
+    todas:    allAvailable.length,
+    geral:    allAvailable.filter((s) => skillTypeGroup(s) === 'geral').length,
+    classe:   allAvailable.filter((s) => skillTypeGroup(s) === 'classe').length,
+    essencia: allAvailable.filter((s) => skillTypeGroup(s) === 'essencia').length,
+    arma:     allAvailable.filter((s) => skillTypeGroup(s) === 'arma').length,
+  };
 
   function handleClose() {
     setError(null);
-    setCatFilter('todas');
+    setTypeFilter('todas');
     onClose();
   }
 
@@ -86,11 +129,15 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
 
   if (!slot) return null;
 
+  const listMaxHeight = Math.max(160, screenHeight * 0.88 - 240);
+  const showTypeFilter = slot.type !== 'class';
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
         <View style={styles.card}>
 
+          {/* ── Cabeçalho ── */}
           <View style={styles.header}>
             <Text style={styles.title}>{SLOT_LABEL[slot.type] ?? 'SLOT'}</Text>
             <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -121,7 +168,7 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
               </View>
             </View>
           ) : (
-            <Text style={styles.emptySlotHint}>Slot vazio</Text>
+            <Text style={styles.emptySlotHint}>Slot vazio — escolha uma habilidade</Text>
           )}
 
           <View style={styles.divider} />
@@ -130,54 +177,122 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
             {currentSkill ? 'TROCAR POR' : 'ESCOLHER HABILIDADE'}
           </Text>
 
-          {/* Filtros por categoria */}
-          {categories.length > 2 && (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catRow}>
-              {categories.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[styles.catBtn, catFilter === cat && styles.catBtnActive]}
-                  onPress={() => setCatFilter(cat)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[styles.catText, catFilter === cat && styles.catTextActive]}>
-                    {cat === 'todas' ? 'TODAS' : cat.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          {/* Filtros por tipo — só em slots livres */}
+          {showTypeFilter && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.typeFiltersRow}>
+              {TYPE_FILTERS.map((f) => {
+                const count = countByType[f.id];
+                const active = typeFilter === f.id;
+                return (
+                  <TouchableOpacity
+                    key={f.id}
+                    style={[styles.typeBtn, active && styles.typeBtnActive]}
+                    onPress={() => setTypeFilter(f.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.typeBtnLabel, active && styles.typeBtnLabelActive]}>
+                      {f.label}
+                    </Text>
+                    <Text style={[styles.typeBtnCount, active && styles.typeBtnCountActive]}>
+                      {count}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           )}
 
-          <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
-            {available.length === 0 && (
-              <Text style={styles.emptyText}>Nenhuma habilidade disponível.</Text>
+          {/* Lista de habilidades */}
+          <ScrollView
+            style={[styles.list, { maxHeight: listMaxHeight }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {available.length === 0 ? (
+              <Text style={styles.emptyText}>
+                {typeFilter !== 'todas'
+                  ? 'Nenhuma habilidade com esse filtro.'
+                  : 'Nenhuma habilidade disponível.'}
+              </Text>
+            ) : (
+              available.map((skill) => {
+                const isLoading = loading === skill.skillId;
+                const isPresel  = skill.skillId === preselectedSkillId;
+                const group     = skillTypeGroup(skill);
+                const hasFlags  = skill.isPassive || skill.actionType || skill.pressaoDice || skill.multiTarget || skill.toggle;
+                return (
+                  <TouchableOpacity
+                    key={skill.skillId}
+                    style={[
+                      styles.skillRow,
+                      isPresel && styles.skillRowHighlight,
+                      !!loading && styles.disabled,
+                    ]}
+                    onPress={() => handleEquip(skill.skillId)}
+                    disabled={!!loading}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.skillInfo}>
+                      {/* Nome + pill de tipo */}
+                      <View style={styles.skillNameRow}>
+                        <Text style={styles.skillName}>{skill.nome}</Text>
+                        <View style={[styles.typePill, styles[`typePill_${group}`] as any]}>
+                          <Text style={[styles.typePillText, styles[`typePillText_${group}`] as any]}>
+                            {group === 'essencia' ? 'ESS' : group === 'arma' ? 'ARMA' : group === 'classe' ? 'CLASSE' : 'GERAL'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Fórmula de dano */}
+                      {skill.danoFormula ? (
+                        <Text style={styles.formula}>⚔ {skill.danoFormula}</Text>
+                      ) : null}
+
+                      {/* Descrição */}
+                      {skill.descricao ? (
+                        <Text style={styles.skillDesc} numberOfLines={2}>{skill.descricao}</Text>
+                      ) : null}
+
+                      {/* Flags */}
+                      {hasFlags && (
+                        <View style={styles.flagsRow}>
+                          {skill.isPassive && (
+                            <View style={[styles.flag, styles.flagPassiva]}>
+                              <Text style={[styles.flagText, { color: Colors.tealBright }]}>PASSIVA</Text>
+                            </View>
+                          )}
+                          {skill.toggle && (
+                            <View style={[styles.flag, styles.flagToggle]}>
+                              <Text style={[styles.flagText, { color: Colors.gold }]}>SUSTENTADA</Text>
+                            </View>
+                          )}
+                          <ActionFlag type={skill.actionType} />
+                          {skill.pressaoDice && (
+                            <View style={[styles.flag, styles.flagPressao]}>
+                              <Text style={[styles.flagText, { color: '#a855f7' }]}>PRESSÃO</Text>
+                            </View>
+                          )}
+                          {skill.multiTarget && (
+                            <View style={[styles.flag, styles.flagMulti]}>
+                              <Text style={[styles.flagText, { color: '#60a5fa' }]}>MULTI-ALVO</Text>
+                            </View>
+                          )}
+                          {!!skill.cooldownTurns && skill.cooldownTurns > 0 && (
+                            <View style={[styles.flag, styles.flagCd]}>
+                              <Text style={[styles.flagText, { color: Colors.muted }]}>CD:{skill.cooldownTurns}</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
+                    </View>
+
+                    <View style={styles.skillRight}>
+                      <Text style={styles.skillCost}>{skill.custo}</Text>
+                      {isLoading && <ActivityIndicator size="small" color={Colors.ember} />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
             )}
-            {available.map((skill) => {
-              const isLoading  = loading === skill.skillId;
-              const isPresel   = skill.skillId === preselectedSkillId;
-              return (
-                <TouchableOpacity
-                  key={skill.skillId}
-                  style={[
-                    styles.skillRow,
-                    isPresel && styles.skillRowHighlight,
-                    !!loading && styles.disabled,
-                  ]}
-                  onPress={() => handleEquip(skill.skillId)}
-                  disabled={!!loading}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.skillInfo}>
-                    <Text style={styles.skillName}>{skill.nome}</Text>
-                    <Text style={styles.skillDesc} numberOfLines={1}>{skill.descricao}</Text>
-                  </View>
-                  <Text style={styles.skillCost}>{skill.custo}</Text>
-                  {isLoading && (
-                    <ActivityIndicator size="small" color={Colors.ember} style={{ marginLeft: 8 }} />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
           </ScrollView>
 
           {error && <Text style={styles.error}>{error}</Text>}
@@ -189,16 +304,22 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
+  overlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center', alignItems: 'center',
+    padding: 16,
+  },
   card: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.ember,
-    borderRadius: 4, padding: 20, width: 420, maxHeight: 540, gap: 12,
+    borderRadius: 4, width: '100%', maxWidth: 480,
+    padding: 20, gap: 12,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  title:  { fontFamily: Fonts.title, fontSize: 14, color: Colors.text, letterSpacing: 2 },
+
+  header:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title:    { fontFamily: Fonts.title, fontSize: 14, color: Colors.text, letterSpacing: 2 },
   closeBtn: { fontSize: 16, color: Colors.muted },
 
-  fieldLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 6 },
+  fieldLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
 
   currentBlock: { gap: 6 },
   currentRow:   { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -210,34 +331,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 6, minWidth: 84, alignItems: 'center',
   },
   removeBtnText: { fontFamily: Fonts.title, fontSize: 9, color: Colors.danger, letterSpacing: 1 },
-
   emptySlotHint: { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic' },
 
   divider: { height: 1, backgroundColor: Colors.border },
 
-  list: { maxHeight: 300 },
-  emptyText: { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic', textAlign: 'center', paddingVertical: 16 },
+  // Filtros de tipo
+  typeFiltersRow: { gap: 6, paddingVertical: 2 },
+  typeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 3, borderWidth: 1, borderColor: Colors.border,
+  },
+  typeBtnActive:      { borderColor: Colors.ember, backgroundColor: Colors.emberDim },
+  typeBtnLabel:       { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
+  typeBtnLabelActive: { color: Colors.ember },
+  typeBtnCount:       { fontFamily: Fonts.title, fontSize: 8, color: Colors.border },
+  typeBtnCountActive: { color: Colors.ember },
+
+  // Lista
+  list:      { /* maxHeight via prop inline */ },
+  emptyText: {
+    fontFamily: Fonts.body, fontSize: 13, color: Colors.muted,
+    fontStyle: 'italic', textAlign: 'center', paddingVertical: 20,
+  },
 
   skillRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
     paddingVertical: 10, paddingHorizontal: 10,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 2,
     backgroundColor: Colors.surface, marginBottom: 6,
   },
   skillRowHighlight: { borderColor: Colors.ember },
-  skillInfo: { flex: 1 },
-  skillName: { fontFamily: Fonts.bodySemiBold, fontSize: 13, color: Colors.text },
-  skillDesc: { fontFamily: Fonts.body, fontSize: 11, color: Colors.muted, marginTop: 2 },
-  skillCost: { fontFamily: Fonts.title, fontSize: 10, color: Colors.tealBright },
+  skillInfo:    { flex: 1, gap: 4 },
+  skillNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  skillName:    { fontFamily: Fonts.bodySemiBold, fontSize: 13, color: Colors.text, flexShrink: 1 },
+  formula:      { fontFamily: Fonts.title, fontSize: 10, color: Colors.ember, letterSpacing: 0.5 },
+  skillDesc:    { fontFamily: Fonts.body, fontSize: 11, color: Colors.muted },
+  skillRight:   { alignItems: 'flex-end', gap: 4, paddingTop: 2 },
+  skillCost:    { fontFamily: Fonts.title, fontSize: 10, color: Colors.tealBright },
 
-  catRow: { marginBottom: 8 },
-  catBtn: {
-    paddingHorizontal: 10, paddingVertical: 4, marginRight: 6,
-    borderRadius: 2, borderWidth: 1, borderColor: Colors.border,
-  },
-  catBtnActive:  { borderColor: Colors.ember, backgroundColor: Colors.emberDim },
-  catText:       { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
-  catTextActive: { color: Colors.ember },
+  // Flags row
+  flagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2 },
+  flag:     { borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1, borderWidth: 1 },
+  flagText: { fontFamily: Fonts.title, fontSize: 7, letterSpacing: 0.8 },
+
+  flagPassiva: { borderColor: Colors.tealBright + '80', backgroundColor: Colors.tealBright + '15' },
+  flagToggle:  { borderColor: Colors.gold + '80',       backgroundColor: Colors.gold + '15' },
+  flagAction:  { borderColor: Colors.ember + '80',      backgroundColor: Colors.emberDim },
+  flagPressao: { borderColor: '#a855f780',              backgroundColor: 'rgba(168,85,247,0.12)' },
+  flagMulti:   { borderColor: '#60a5fa80',              backgroundColor: 'rgba(96,165,250,0.12)' },
+  flagCd:      { borderColor: Colors.muted + '80',      backgroundColor: 'transparent' },
+
+  // Pills de tipo por linha de skill
+  typePill:     { borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1, borderWidth: 1 },
+  typePillText: { fontFamily: Fonts.title, fontSize: 7, letterSpacing: 1 },
+
+  typePill_geral:        { borderColor: Colors.border,                 backgroundColor: 'transparent' },
+  typePillText_geral:    { color: Colors.muted },
+  typePill_classe:       { borderColor: Colors.ember + '80',           backgroundColor: Colors.emberDim },
+  typePillText_classe:   { color: Colors.ember },
+  typePill_essencia:     { borderColor: Colors.gold + '80',            backgroundColor: Colors.gold + '18' },
+  typePillText_essencia: { color: Colors.gold },
+  typePill_arma:         { borderColor: Colors.tealBright + '80',      backgroundColor: Colors.tealBright + '18' },
+  typePillText_arma:     { color: Colors.tealBright },
+
   disabled: { opacity: 0.6 },
   error: { fontFamily: Fonts.body, fontSize: 13, color: Colors.danger },
 });

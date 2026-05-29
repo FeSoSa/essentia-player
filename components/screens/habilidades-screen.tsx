@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, FlatList, StyleSheet, TextInput, ScrollView } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { SlotGrid } from '@/components/ui/slot-grid';
 import { SlotEditModal } from '@/components/ui/slot-edit-modal';
@@ -11,19 +11,35 @@ import { useGameStore } from '@/store/gameStore';
 import { updateSlot } from '@/lib/api';
 import type { Slot, SkillTreeEntry } from '@/types';
 
-type Filter = 'todas' | 'disponivel' | 'desbloqueada' | 'bloqueada';
+type StatusFilter = 'todas' | 'disponivel' | 'desbloqueada' | 'bloqueada';
+type TypeFilter   = 'todos' | 'geral' | 'classe' | 'essencia' | 'arma';
 
-const FILTERS: { id: Filter; label: string }[] = [
+const STATUS_FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'todas',        label: 'TODAS'        },
   { id: 'disponivel',   label: 'DISPONÍVEL'   },
   { id: 'desbloqueada', label: 'DESBLOQUEADA' },
   { id: 'bloqueada',    label: 'BLOQUEADA'    },
 ];
 
+const TYPE_FILTERS: { id: TypeFilter; label: string }[] = [
+  { id: 'todos',    label: 'TODOS'    },
+  { id: 'geral',    label: 'GERAL'    },
+  { id: 'classe',   label: 'CLASSE'   },
+  { id: 'essencia', label: 'ESSÊNCIA' },
+  { id: 'arma',     label: 'ARMA'     },
+];
+
 function skillStatus(s: SkillTreeEntry, accessibleByEssencia: Set<string>): 'desbloqueada' | 'disponivel' | 'bloqueada' {
   if (s.unlocked) return 'desbloqueada';
   if (!s.requirementsText || accessibleByEssencia.has(s.skillId)) return 'disponivel';
   return 'bloqueada';
+}
+
+function skillType(s: SkillTreeEntry): TypeFilter {
+  if (s.skillType === 'weapon')                                  return 'arma';
+  if (s.skillType === 'essencia')                                return 'essencia';
+  if (s.skillType === 'class' && s.categoria !== 'Geral')        return 'classe';
+  return 'geral';
 }
 
 const BORDER_COLOR: Record<string, string> = {
@@ -58,7 +74,9 @@ export function HabilidadesScreen() {
     return set;
   }, [player.essenciasObtidas, essencias]);
 
-  const [filter, setFilter] = useState<Filter>('todas');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('todas');
+  const [typeFilter,   setTypeFilter]   = useState<TypeFilter>('todos');
+  const [search,       setSearch]       = useState('');
 
   // Slot edit (equipar — só para slots vazios)
   const [editSlot, setEditSlot]           = useState<Slot | null>(null);
@@ -78,8 +96,14 @@ export function HabilidadesScreen() {
 
   // Filter + sort: disponivel first, then desbloqueada, then bloqueada
   const STATUS_ORDER = { disponivel: 0, desbloqueada: 1, bloqueada: 2 };
+  const searchTerm = search.trim().toLowerCase();
   const visible = skillTree
-    .filter((s) => filter === 'todas' || skillStatus(s, accessibleByEssencia) === filter)
+    .filter((s) => {
+      if (statusFilter !== 'todas' && skillStatus(s, accessibleByEssencia) !== statusFilter) return false;
+      if (typeFilter !== 'todos'   && skillType(s) !== typeFilter) return false;
+      if (searchTerm && !s.nome.toLowerCase().includes(searchTerm) && !s.descricao?.toLowerCase().includes(searchTerm)) return false;
+      return true;
+    })
     .sort((a, b) => STATUS_ORDER[skillStatus(a, accessibleByEssencia)] - STATUS_ORDER[skillStatus(b, accessibleByEssencia)]);
 
   function handleSlotEdit(slot: Slot) {
@@ -150,6 +174,11 @@ export function HabilidadesScreen() {
                 <Text style={styles.pressaoBadgeText}>PRESSÃO</Text>
               </View>
             )}
+            {skill.multiTarget && (
+              <View style={styles.multiTargetBadge}>
+                <Text style={styles.multiTargetBadgeText}>MULTI-ALVO</Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.metaRow}>
@@ -196,30 +225,75 @@ export function HabilidadesScreen() {
 
       <View style={styles.divider} />
 
-      {/* Filters */}
-      <View style={styles.filterRow}>
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.id}
-            style={[styles.filterBtn, filter === f.id && styles.filterBtnActive]}
-            onPress={() => setFilter(f.id)}
-            activeOpacity={0.7}
-          >
-            <Text style={[styles.filterText, filter === f.id && styles.filterTextActive]}>
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+      {/* Body: sidebar + list */}
+      <View style={styles.body}>
 
-      {/* Skill list */}
-      <FlatList
-        data={visible}
-        keyExtractor={(s) => s.skillId}
-        renderItem={renderSkill}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
+        {/* ── Sidebar ── */}
+        <ScrollView style={styles.sidebar} contentContainerStyle={styles.sidebarContent} showsVerticalScrollIndicator={false}>
+          <Text style={styles.sidebarGroupLabel}>STATUS</Text>
+          {STATUS_FILTERS.map((f) => (
+            <TouchableOpacity
+              key={f.id}
+              style={[styles.sidebarBtn, statusFilter === f.id && styles.sidebarBtnActive]}
+              onPress={() => setStatusFilter(f.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.sidebarBtnText, statusFilter === f.id && styles.sidebarBtnTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          <View style={styles.sidebarDivider} />
+
+          <Text style={styles.sidebarGroupLabel}>TIPO</Text>
+          {TYPE_FILTERS.map((f) => (
+            <TouchableOpacity
+              key={f.id}
+              style={[styles.sidebarBtn, typeFilter === f.id && styles.sidebarBtnActive]}
+              onPress={() => setTypeFilter(f.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.sidebarBtnText, typeFilter === f.id && styles.sidebarBtnTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+
+          <View style={styles.sidebarDivider} />
+
+          <Text style={styles.sidebarGroupLabel}>BUSCA</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Nome ou descrição…"
+            placeholderTextColor={Colors.muted}
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+          {search.length > 0 && (
+            <TouchableOpacity style={styles.clearSearch} onPress={() => setSearch('')} activeOpacity={0.7}>
+              <Text style={styles.clearSearchText}>LIMPAR</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+
+        <View style={styles.sidebarSeparator} />
+
+        {/* ── Skill list ── */}
+        <FlatList
+          style={styles.list}
+          data={visible}
+          keyExtractor={(s) => s.skillId}
+          renderItem={renderSkill}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <Text style={styles.emptyText}>Nenhuma habilidade encontrada.</Text>
+          }
+        />
+      </View>
 
       <SkillInfoModal
         visible={!!infoSkill}
@@ -247,18 +321,40 @@ const styles = StyleSheet.create({
   sectionLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 8 },
   divider:      { height: 1, backgroundColor: Colors.border },
 
-  filterRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 6 },
-  filterBtn: {
-    paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 2, borderWidth: 1, borderColor: Colors.border,
+  body:         { flex: 1, flexDirection: 'row' },
+
+  // Sidebar
+  sidebar:        { width: 88 },
+  sidebarContent: { padding: 10, gap: 4 },
+
+  sidebarGroupLabel: {
+    fontFamily: Fonts.title, fontSize: 8, color: Colors.muted,
+    letterSpacing: 2, marginBottom: 2, marginTop: 2,
   },
-  filterBtnActive:  { borderColor: Colors.ember, backgroundColor: Colors.emberDim },
-  filterText:       { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 1 },
-  filterTextActive: { color: Colors.ember },
+  sidebarDivider: { height: 1, backgroundColor: Colors.border, marginVertical: 8 },
 
-  errorText: { fontFamily: Fonts.body, fontSize: 12, color: Colors.danger, paddingHorizontal: 12, paddingBottom: 4 },
+  sidebarBtn: {
+    paddingHorizontal: 8, paddingVertical: 5,
+    borderRadius: 3, borderWidth: 1, borderColor: Colors.border,
+  },
+  sidebarBtnActive:     { borderColor: Colors.ember, backgroundColor: Colors.emberDim },
+  sidebarBtnText:       { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
+  sidebarBtnTextActive: { color: Colors.ember },
 
-  listContent: { paddingHorizontal: 12, paddingBottom: 16 },
+  searchInput: {
+    fontFamily: Fonts.body, fontSize: 11, color: Colors.text,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 3,
+    paddingHorizontal: 7, paddingVertical: 5, marginTop: 2,
+  },
+  clearSearch:     { marginTop: 4, alignItems: 'center' },
+  clearSearchText: { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
+
+  sidebarSeparator: { width: 1, backgroundColor: Colors.border },
+
+  // Skill list
+  list:        { flex: 1 },
+  listContent: { paddingHorizontal: 12, paddingBottom: 16, paddingTop: 4 },
+  emptyText:   { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, textAlign: 'center', marginTop: 32 },
 
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -275,8 +371,6 @@ const styles = StyleSheet.create({
   metaRow:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
   custo:       { fontFamily: Fonts.title, fontSize: 10, color: Colors.tealBright, letterSpacing: 1 },
   statusLabel: { fontFamily: Fonts.title, fontSize: 8, letterSpacing: 2 },
-
-  reqText: { fontFamily: Fonts.body, fontSize: 11, color: Colors.danger, fontStyle: 'italic' },
 
   maestriaBar:  { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   maestriaUsos: { fontFamily: Fonts.body, fontSize: 10, color: Colors.muted },
@@ -295,5 +389,7 @@ const styles = StyleSheet.create({
   maestriaBadgeReady: { backgroundColor: Colors.danger },
   pressaoBadge:     { backgroundColor: 'rgba(168,85,247,0.15)', borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1, borderWidth: 1, borderColor: '#a855f7' },
   pressaoBadgeText: { fontFamily: Fonts.title, fontSize: 8, color: '#a855f7', letterSpacing: 1 },
+  multiTargetBadge:     { backgroundColor: 'rgba(96,165,250,0.15)', borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1, borderWidth: 1, borderColor: '#60a5fa' },
+  multiTargetBadgeText: { fontFamily: Fonts.title, fontSize: 8, color: '#60a5fa', letterSpacing: 1 },
   chevron: { fontSize: 18, color: Colors.muted, lineHeight: 22 },
 });

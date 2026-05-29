@@ -5,9 +5,10 @@ import {
 } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { NumPad } from '@/components/ui/num-pad';
+import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
-import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, skillMiss } from '@/lib/api';
+import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, requestMultiDamage, skillMiss } from '@/lib/api';
 import { getModifier, formatMod, resolveAtributeMod } from '@/lib/rules';
 import type { SkillTreeEntry, Slot, DamageResult, Attributes } from '@/types';
 
@@ -63,8 +64,15 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const setPlayer    = usePlayerStore((s) => s.setPlayer);
   const setSkillTree = usePlayerStore((s) => s.setSkillTree);
   const essencias    = usePlayerStore((s) => s.essencias);
-  const enemies      = useGameStore((s) => s.enemies);
-  const bosses       = useGameStore((s) => s.bosses);
+  const enemies             = useGameStore((s) => s.enemies);
+  const bosses              = useGameStore((s) => s.bosses);
+  const mainActionUsed      = useGameStore((s) => s.mainActionUsed);
+  const bonusActionUsed     = useGameStore((s) => s.bonusActionUsed);
+  const setMainActionUsed   = useGameStore((s) => s.setMainActionUsed);
+  const setBonusActionUsed  = useGameStore((s) => s.setBonusActionUsed);
+
+  const [actionConfirmOpen,      setActionConfirmOpen]      = useState(false);
+  const [pendingActionHandler,   setPendingActionHandler]   = useState<(() => void) | null>(null);
 
   const [unlocking,     setUnlocking]     = useState(false);
   const [choosing,      setChoosing]      = useState<'aumento' | 'otimizacao' | null>(null);
@@ -81,6 +89,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const [diceInput,     setDiceInput]     = useState('');
   const [dmgPadMode, setDmgPadMode] = useState<'dice' | 'pressao'>('dice');
   const [selectedTarget, setSelectedTarget] = useState<{ id: string; kind: TargetKind } | null>(null);
+  const [selectedTargets, setSelectedTargets] = useState<Array<{ id: string; kind: TargetKind }>>([]);
   const [useResult,       setUseResult]       = useState<DamageResult | null>(null);
   const [useLoading,      setUseLoading]      = useState(false);
   const [applyingDmg,     setApplyingDmg]     = useState(false);
@@ -117,32 +126,44 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const nextUpgradeLevel = maestria ? maestria.choices.length + 1 : 1;
   const upgradeEffects = UPGRADE_EFFECTS[nextUpgradeLevel];
 
+  const hitBonusTotal    = player.statusEffects.reduce((s, e) => s + (e.hitBonus    ?? 0), 0);
+  const attackBonusTotal = player.statusEffects.reduce((s, e) => s + (e.attackBonus ?? 0), 0);
+  const damageBonusTotal = player.statusEffects.reduce((s, e) => s + (e.damageBonus ?? 0), 0);
+
   const diceValue    = parseInt(diceInput, 10);
   const validDice    = !isNaN(diceValue) && diceValue > 0;
   const agiMod       = getModifier((player.effectiveAttributes ?? player.attributes).agility);
   const bonusValue   = parseInt(bonusInput, 10) || 0;
   const hitValue     = parseInt(hitInput, 10);
   const validHit     = !isNaN(hitValue) && hitValue >= 1;
-  const hitTotal     = validHit ? hitValue + agiMod + bonusValue : null;
+  const hitTotal     = validHit ? hitValue + agiMod + bonusValue + hitBonusTotal : null;
   const diceFormula   = skill ? parseDice(skill.descricao) : null;
   const danoBase      = skill?.danoBase ?? 0;
-  const pressaoValue  = parseInt(pressaoInput, 10) || 0;
   const equilibrio    = skill?.equilibrio ?? null;
   const modAtributo   = skill?.atributo ? resolveAtributeMod(skill.atributo, player.attributes) : 0;
-  const effectiveDiceValue = isCrit ? diceValue * 2 : diceValue;
-  const baseDamage    = validDice
+  const hasCombat    = enemies.length > 0 || bosses.length > 0;
+  const isPressaoMode        = !!(skill?.pressaoDice && player.pressao);
+  const pressaoPoints        = isPressaoMode ? player.pressao!.current : 0;
+  const pressaoCombinedDice  = hasCombat ? hitValue : diceValue;
+  const validPressao         = isPressaoMode && !isNaN(pressaoCombinedDice) && pressaoCombinedDice > 0;
+  const pressaoCombinedValue = pressaoCombinedDice + pressaoPoints;
+  const effectiveDiceValue = isPressaoMode
+    ? pressaoCombinedValue + attackBonusTotal
+    : diceValue + attackBonusTotal;
+  const isNoDamage     = !skill.danoFormula && !skill.isPassive && !skill.toggle;
+  const validForDamage = isPressaoMode ? validPressao : validDice;
+  const baseDamage = validForDamage
     ? equilibrio != null
-      ? danoBase + Math.floor((effectiveDiceValue * modAtributo) / equilibrio)
-      : danoBase
+      ? (isCrit ? danoBase * 2 : danoBase) + Math.floor((effectiveDiceValue * modAtributo) / equilibrio)
+      : (isCrit ? danoBase * 2 : danoBase)
     : null;
   const maestriaBonus = maestria?.bonusDano ?? 0;
   const damageWithMaestria = baseDamage !== null
     ? maestriaBonus > 0 ? Math.round(baseDamage * (1 + maestriaBonus)) : baseDamage
     : null;
   const damagePreview = damageWithMaestria !== null
-    ? damageWithMaestria + pressaoValue
+    ? damageWithMaestria + damageBonusTotal
     : null;
-  const hasCombat    = enemies.length > 0 || bosses.length > 0;
 
   function handleClose() {
     setError(null);
@@ -156,13 +177,44 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     setDiceInput('');
     setDmgPadMode('dice');
     setSelectedTarget(null);
+    setSelectedTargets([]);
     setUseResult(null);
     onClose();
   }
 
+  function getActionLabel(actionType?: string): string {
+    if (actionType === 'bonus') return 'Ação Bônus';
+    if (actionType === 'both') return 'Ação Principal + Ação Bônus';
+    return 'Ação Principal';
+  }
+
+  function buildActionMessage(): string {
+    const at = skill?.actionType;
+    let msg = `Esta habilidade consumirá:\n${getActionLabel(at)}`;
+    const mainUsed  = at !== 'bonus' && mainActionUsed;
+    const bonusUsed = at !== 'main'  && bonusActionUsed;
+    if (mainUsed && bonusUsed) msg += '\n\n⚠ Ambas as ações já foram utilizadas neste turno.';
+    else if (mainUsed)         msg += '\n\n⚠ A Ação Principal já foi utilizada neste turno.';
+    else if (bonusUsed)        msg += '\n\n⚠ A Ação Bônus já foi utilizada neste turno.';
+    return msg;
+  }
+
+  function markActionsUsed() {
+    const at = skill?.actionType ?? 'main';
+    if (at === 'main' || at === 'both')  setMainActionUsed(true);
+    if (at === 'bonus' || at === 'both') setBonusActionUsed(true);
+  }
+
+  function withActionConfirm(handler: () => void) {
+    setPendingActionHandler(() => handler);
+    setActionConfirmOpen(true);
+  }
+
   // Chamado ao avançar para o acerto — seta cooldown e obtém custo (sem dice roll)
   async function handleAdvanceToHit() {
-    if (!activeSlot || !player.id || !selectedTarget) return;
+    const isMulti = !!skill?.multiTarget;
+    const hasTarget = isMulti ? selectedTargets.length > 0 : !!selectedTarget;
+    if (!activeSlot || !player.id || !hasTarget) return;
     setUseLoading(true);
     setError(null);
     try {
@@ -175,6 +227,42 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
       const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
         ?? err?.message
         ?? 'Erro ao usar habilidade.';
+      setError(typeof msg === 'string' ? msg : 'Erro ao usar habilidade.');
+    } finally {
+      setUseLoading(false);
+    }
+  }
+
+  // Toggle: ativa ou desativa via mesma rota useSkill
+  async function handleToggle() {
+    if (!activeSlot || !player.id) return;
+    setUseLoading(true);
+    setError(null);
+    try {
+      await useSkill(player.id, activeSlot.id, {});
+      handleClose();
+    } catch (err: any) {
+      const data = err?.response?.data;
+      const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
+        ?? err?.message ?? 'Erro ao alternar habilidade.';
+      setError(typeof msg === 'string' ? msg : 'Erro ao alternar habilidade.');
+    } finally {
+      setUseLoading(false);
+    }
+  }
+
+  // Habilidades sem dano — usa direto e fecha
+  async function handleUseSimple() {
+    if (!activeSlot || !player.id) return;
+    setUseLoading(true);
+    setError(null);
+    try {
+      await useSkill(player.id, activeSlot.id, {});
+      handleClose();
+    } catch (err: any) {
+      const data = err?.response?.data;
+      const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
+        ?? err?.message ?? 'Erro ao usar habilidade.';
       setError(typeof msg === 'string' ? msg : 'Erro ao usar habilidade.');
     } finally {
       setUseLoading(false);
@@ -218,28 +306,47 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   }
 
   async function handleRequestDamage() {
-    if (!useResult || !selectedTarget) return;
+    if (!useResult) return;
     setApplyingDmg(true);
     setError(null);
     const reqId = `${player.id}-${Date.now()}`;
+    const costs = (useResult.costPaid ?? []).reduce((acc, c) => {
+      if (c.value != null) acc[c.type] = c.value;
+      return acc;
+    }, {} as Record<string, number>);
+    const finalDamage = damagePreview ?? useResult.damage ?? 0;
     try {
-      const targetName = selectedTarget.kind === 'enemy'
-        ? (enemies.find((e) => e.instanceId === selectedTarget.id)?.name ?? 'Inimigo')
-        : (bosses.find((b) => b.instanceId === selectedTarget.id)?.name ?? 'Boss');
-      const costs = (useResult.costPaid ?? []).reduce((acc, c) => {
-        if (c.value != null) acc[c.type] = c.value;
-        return acc;
-      }, {} as Record<string, number>);
-      // Usa o dano calculado pelo dado do jogador se disponível; senão, usa o do backend
-      const finalDamage = damagePreview ?? useResult.damage ?? 0;
-      await requestDamage(player.id, {
-        requestId: reqId,
-        targetId: selectedTarget.id,
-        targetType: selectedTarget.kind,
-        targetName,
-        damage: finalDamage,
-        costs,
-      });
+      if (skill?.multiTarget && selectedTargets.length > 0) {
+        const { damageMode, specificDamage } = skill.multiTarget;
+        const targets = selectedTargets.map((t, idx) => {
+          const name = t.kind === 'enemy'
+            ? (enemies.find((e) => e.instanceId === t.id)?.name ?? 'Inimigo')
+            : (bosses.find((b) => b.instanceId === t.id)?.name ?? 'Boss');
+          let dmg: number;
+          if (damageMode === 'igual') {
+            dmg = finalDamage;
+          } else if (damageMode === 'distribuido') {
+            dmg = Math.floor(finalDamage / selectedTargets.length);
+          } else {
+            dmg = idx === 0 ? finalDamage : (specificDamage ?? 0);
+          }
+          return { targetId: t.id, targetType: t.kind, targetName: name, damage: dmg };
+        });
+        await requestMultiDamage(player.id, { requestId: reqId, targets, costs });
+      } else {
+        if (!selectedTarget) return;
+        const targetName = selectedTarget.kind === 'enemy'
+          ? (enemies.find((e) => e.instanceId === selectedTarget.id)?.name ?? 'Inimigo')
+          : (bosses.find((b) => b.instanceId === selectedTarget.id)?.name ?? 'Boss');
+        await requestDamage(player.id, {
+          requestId: reqId,
+          targetId: selectedTarget.id,
+          targetType: selectedTarget.kind,
+          targetName,
+          damage: finalDamage,
+          costs,
+        });
+      }
       setPendingRequestId(reqId);
       setDamageResult(null);
       setUseStep('result');
@@ -284,7 +391,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     }
   }
 
-  return (
+  return (<>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
         <View style={styles.card}>
@@ -329,6 +436,17 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             </View>
           )}
 
+          {/* ── Toggle (modo de uso) ── */}
+          {activeSlot && skill.toggle && (
+            <View style={styles.passivaMsgBlock}>
+              <Text style={styles.passivaMsgText}>
+                {activeSlot.toggleActive
+                  ? '⚡ Ativa — efeito sendo aplicado. Toque em DESATIVAR para encerrar.'
+                  : 'Inativa — toque em ATIVAR para ligar o efeito.'}
+              </Text>
+            </View>
+          )}
+
           {/* Conteúdo scrollável — só na aba de habilidades */}
           {!activeSlot && (
           <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -362,7 +480,47 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 {skill.pressaoDice && (
                   <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>PRESSÃO</Text>
-                    <Text style={[styles.detailValue, { color: '#a855f7' }]}>+1d6 por ponto de Pressão</Text>
+                    <Text style={[styles.detailValue, { color: '#a855f7' }]}>d20 ataque + pontos de Pressão como dado de dano</Text>
+                  </View>
+                )}
+                {/* Multi-target */}
+                {skill.multiTarget && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>MULTI-ALVO</Text>
+                    <Text style={[styles.detailValue, { color: '#60a5fa' }]}>
+                      {skill.multiTarget.maxTargets} alvos ·{' '}
+                      {skill.multiTarget.damageMode === 'igual' && 'dano total a todos'}
+                      {skill.multiTarget.damageMode === 'distribuido' && 'dano dividido entre alvos'}
+                      {skill.multiTarget.damageMode === 'especifico' && `1º alvo total, demais ${skill.multiTarget.specificDamage ?? 0} fixo`}
+                    </Text>
+                  </View>
+                )}
+                {/* Bônus de combate (buff ao usar) */}
+                {(skill.hitBonus || skill.attackBonus || skill.damageBonus) && (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>BUFF</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, justifyContent: 'flex-end' }}>
+                      {!!skill.hitBonus && (
+                        <Text style={[styles.detailValue, { color: Colors.tealBright }]}>
+                          Acerto {skill.hitBonus > 0 ? `+${skill.hitBonus}` : skill.hitBonus}
+                        </Text>
+                      )}
+                      {!!skill.attackBonus && (
+                        <Text style={[styles.detailValue, { color: Colors.tealBright }]}>
+                          Ataque {skill.attackBonus > 0 ? `+${skill.attackBonus}` : skill.attackBonus}
+                        </Text>
+                      )}
+                      {!!skill.damageBonus && (
+                        <Text style={[styles.detailValue, { color: Colors.tealBright }]}>
+                          Dano {skill.damageBonus > 0 ? `+${skill.damageBonus}` : skill.damageBonus}
+                        </Text>
+                      )}
+                      {skill.buffDurationTurns != null && (
+                        <Text style={[styles.detailValue, { color: Colors.muted }]}>
+                          · {skill.buffDurationTurns === -1 ? '∞' : `${skill.buffDurationTurns}t`}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                 )}
             </View>
@@ -491,32 +649,61 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           )}
 
           {/* ── Steps de uso (fora do ScrollView, sem scroll) ── */}
-          {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && (
+          {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && !isNoDamage && (
             <View style={styles.stepsContainer}>
 
               {/* PASSO 1 — ALVO */}
-              {hasCombat && useStep === 'target' && (
-                <View style={styles.stepInline}>
-                  <View style={styles.targetRow}>
-                    {[...enemies.map(e => ({ id: e.instanceId, kind: 'enemy' as TargetKind, icon: e.icon || '⚔', name: e.name, hp: `${e.hpCurrent}/${e.hpMax}` })),
-                      ...bosses.map(b => ({ id: b.instanceId, kind: 'boss' as TargetKind, icon: '★', name: b.currentPhase > 0 && b.phases[b.currentPhase]?.name ? `${b.name} — ${b.phases[b.currentPhase]!.name}` : b.name, hp: `${b.hpCurrent}/${b.phases[b.currentPhase]?.hpMax ?? '?'}` }))
-                    ].map(t => (
-                      <TouchableOpacity key={t.id}
-                        style={[styles.targetBtnCompact, selectedTarget?.id === t.id && styles.targetBtnSelected]}
-                        onPress={() => setSelectedTarget(selectedTarget?.id === t.id ? null : { id: t.id, kind: t.kind })}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.targetIcon}>{t.icon}</Text>
-                        <Text style={styles.targetName} numberOfLines={1}>{t.name}</Text>
-                        <Text style={styles.targetHp}>{t.hp}</Text>
+              {hasCombat && useStep === 'target' && (() => {
+                const isMulti = !!skill?.multiTarget;
+                const maxT = skill?.multiTarget?.maxTargets ?? 1;
+                const allTargets = [
+                  ...enemies.map(e => ({ id: e.instanceId, kind: 'enemy' as TargetKind, icon: e.icon || '⚔', name: e.name, hp: `${e.hpCurrent}/${e.hpMax}` })),
+                  ...bosses.map(b => ({ id: b.instanceId, kind: 'boss' as TargetKind, icon: '★', name: b.currentPhase > 0 && b.phases[b.currentPhase]?.name ? `${b.name} — ${b.phases[b.currentPhase]!.name}` : b.name, hp: `${b.hpCurrent}/${b.phases[b.currentPhase]?.hpMax ?? '?'}` })),
+                ];
+                return (
+                  <View style={styles.stepInline}>
+                    <View style={{ flex: 1, gap: 6 }}>
+                      {isMulti && (
+                        <Text style={styles.multiTargetLabel}>
+                          ALVOS: {selectedTargets.length}/{maxT}
+                        </Text>
+                      )}
+                      <View style={styles.targetRow}>
+                        {allTargets.map(t => {
+                          const isSelectedSingle = selectedTarget?.id === t.id;
+                          const isSelectedMulti = selectedTargets.some(s => s.id === t.id);
+                          const isSelected = isMulti ? isSelectedMulti : isSelectedSingle;
+                          const isDisabled = isMulti && !isSelectedMulti && selectedTargets.length >= maxT;
+                          return (
+                            <TouchableOpacity key={t.id}
+                              style={[styles.targetBtnCompact, isSelected && styles.targetBtnSelected, isDisabled && styles.targetBtnDisabled]}
+                              onPress={() => {
+                                if (isMulti) {
+                                  if (isSelectedMulti) {
+                                    setSelectedTargets(prev => prev.filter(s => s.id !== t.id));
+                                  } else if (selectedTargets.length < maxT) {
+                                    setSelectedTargets(prev => [...prev, { id: t.id, kind: t.kind }]);
+                                  }
+                                } else {
+                                  setSelectedTarget(isSelectedSingle ? null : { id: t.id, kind: t.kind });
+                                }
+                              }}
+                              activeOpacity={isDisabled ? 1 : 0.7}
+                            >
+                              <Text style={styles.targetIcon}>{t.icon}</Text>
+                              <Text style={styles.targetName} numberOfLines={1}>{t.name}</Text>
+                              <Text style={styles.targetHp}>{t.hp}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <TouchableOpacity onPress={() => setUseStep('damage')} activeOpacity={0.7}>
+                        <Text style={styles.skipLink}>Sem alvo →</Text>
                       </TouchableOpacity>
-                    ))}
+                    </View>
                   </View>
-                  <TouchableOpacity onPress={() => setUseStep('damage')} activeOpacity={0.7}>
-                    <Text style={styles.skipLink}>Sem alvo →</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                );
+              })()}
 
               {/* PASSO 2 — ACERTO */}
               {hasCombat && useStep === 'hit' && (
@@ -560,7 +747,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                     {hitTotal !== null && (
                       <Text style={[styles.stepBig, { fontSize: 32, color: Colors.tealBright }]}>{hitTotal}</Text>
                     )}
-                    {hitValue === 20 && (
+                    {hitValue >= (skill.critThreshold ?? 20) && (
                       <Text style={styles.critBadge}>CRÍTICO!</Text>
                     )}
                   </View>
@@ -572,10 +759,10 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 <View style={styles.stepCol}>
                   {/* Linha superior: numpad + info */}
                   <View style={styles.stepInline}>
-                    {skill.danoFormula ? (
+                    {skill.danoFormula && !(hasCombat && isPressaoMode) ? (
                       <NumPad
-                        value={dmgPadMode === 'dice' ? diceInput : pressaoInput}
-                        onChange={dmgPadMode === 'dice' ? setDiceInput : setPressaoInput}
+                        value={diceInput}
+                        onChange={setDiceInput}
                         maxLength={3}
                       />
                     ) : null}
@@ -605,49 +792,30 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                             </>
                           )}
 
-                          {/* Com pressão: campo de input + total final */}
+                          {/* Com pressão: exibe combinação d20 + pontos e total */}
                           {skill.pressaoDice && player.pressao && (
-                            <>
-                              <View style={styles.pressaoBlock}>
-                                <View style={styles.pressaoHeaderRow}>
-                                  <Text style={styles.pressaoLabelText}>PRESSÃO</Text>
-                                  <Text style={styles.pressaoDiceHint}>{player.pressao.current} × 1d6</Text>
-                                </View>
-                                <View style={styles.pressaoInputRow}>
-                                  <TouchableOpacity
-                                    style={[styles.numpadToggleBtn, dmgPadMode === 'pressao' && styles.numpadToggleBtnActive]}
-                                    onPress={() => setDmgPadMode(m => m === 'dice' ? 'pressao' : 'dice')}
-                                    activeOpacity={0.7}
-                                  >
-                                    <Text style={[styles.numpadToggleText, dmgPadMode === 'pressao' && styles.numpadToggleTextActive]}>
-                                      {dmgPadMode === 'pressao' ? '⌨ NUMPAD ATIVO' : '⌨ USAR NUMPAD'}
-                                    </Text>
-                                  </TouchableOpacity>
-                                  {dmgPadMode === 'pressao' ? (
-                                    <Text style={[styles.pressaoValueField, styles.pressaoValueFieldActive]}>
-                                      {pressaoInput || '0'}
-                                    </Text>
-                                  ) : (
-                                    <TextInput
-                                      style={styles.pressaoValueField}
-                                      value={pressaoInput}
-                                      onChangeText={setPressaoInput}
-                                      keyboardType="number-pad"
-                                      placeholder="0"
-                                      placeholderTextColor={Colors.muted}
-                                    />
-                                  )}
-                                </View>
-                                {damagePreview !== null && (
-                                  <View style={styles.pressaoTotalRow}>
-                                    <Text style={styles.pressaoTotalLabel}>TOTAL</Text>
-                                    <Text style={[styles.stepBig, { fontSize: 32, color: '#a855f7' }]}>
-                                      {damagePreview}
-                                    </Text>
-                                  </View>
-                                )}
+                            <View style={styles.pressaoBlock}>
+                              <View style={styles.pressaoHeaderRow}>
+                                <Text style={styles.pressaoLabelText}>PRESSÃO</Text>
+                                <Text style={styles.pressaoDiceHint}>
+                                  {hasCombat
+                                    ? (validHit
+                                        ? `d20 (${hitValue}) + ${pressaoPoints} pts = ${pressaoCombinedValue}`
+                                        : `${pressaoPoints} pts de Pressão`)
+                                    : (validDice
+                                        ? `d20 (${diceValue}) + ${pressaoPoints} pts = ${pressaoCombinedValue}`
+                                        : `${pressaoPoints} pts de Pressão`)}
+                                </Text>
                               </View>
-                            </>
+                              {damagePreview !== null && (
+                                <View style={styles.pressaoTotalRow}>
+                                  <Text style={styles.pressaoTotalLabel}>TOTAL</Text>
+                                  <Text style={[styles.stepBig, { fontSize: 32, color: '#a855f7' }]}>
+                                    {damagePreview}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           )}
                         </>
                       ) : (
@@ -655,6 +823,37 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                       )}
                     </View>
                   </View>
+                </View>
+              )}
+
+              {/* MULTI-TARGET — breakdown de dano por alvo */}
+              {((hasCombat && useStep === 'damage') || (!hasCombat && useStep === 'target')) &&
+                skill?.multiTarget && selectedTargets.length > 0 && damagePreview !== null && (
+                <View style={styles.multiTargetBreakdown}>
+                  <Text style={styles.multiTargetBreakdownLabel}>
+                    {skill.multiTarget.damageMode === 'igual' && 'IGUAL — mesmo dano a todos'}
+                    {skill.multiTarget.damageMode === 'distribuido' && 'DISTRIBUÍDO — dano dividido entre os alvos'}
+                    {skill.multiTarget.damageMode === 'especifico' && 'ESPECÍFICO — dano diferente por alvo'}
+                  </Text>
+                  {selectedTargets.map((t, idx) => {
+                    const name = t.kind === 'enemy'
+                      ? (enemies.find(e => e.instanceId === t.id)?.name ?? 'Inimigo')
+                      : (bosses.find(b => b.instanceId === t.id)?.name ?? 'Boss');
+                    let dmg: number;
+                    if (skill.multiTarget!.damageMode === 'igual') {
+                      dmg = damagePreview;
+                    } else if (skill.multiTarget!.damageMode === 'distribuido') {
+                      dmg = Math.floor(damagePreview / selectedTargets.length);
+                    } else {
+                      dmg = idx === 0 ? damagePreview : (skill.multiTarget!.specificDamage ?? 0);
+                    }
+                    return (
+                      <View key={t.id} style={styles.multiTargetRow}>
+                        <Text style={styles.multiTargetRowName} numberOfLines={1}>{name}</Text>
+                        <Text style={styles.multiTargetRowDmg}>{dmg}</Text>
+                      </View>
+                    );
+                  })}
                 </View>
               )}
 
@@ -723,12 +922,45 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               </TouchableOpacity>
             )}
 
-            {/* Passo 1: alvo → acerto (chama useSkill ao avançar) */}
-            {activeSlot && (cooldown === 0 || usageStarted) && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (
+            {/* Toggle: ativar / desativar */}
+            {activeSlot && skill.toggle && (
               <TouchableOpacity
-                style={[styles.actionBtn, styles.actionBtnUse, (!selectedTarget || useLoading) && styles.btnDisabled]}
-                onPress={handleAdvanceToHit}
-                disabled={!selectedTarget || useLoading}
+                style={[styles.actionBtn, activeSlot.toggleActive ? { backgroundColor: Colors.danger } : { backgroundColor: '#16a34a' }, useLoading && styles.btnDisabled]}
+                onPress={activeSlot?.toggleActive ? handleToggle : () => withActionConfirm(handleToggle)}
+                disabled={useLoading}
+                activeOpacity={0.7}
+              >
+                {useLoading
+                  ? <ActivityIndicator size="small" color={Colors.text} />
+                  : <Text style={styles.actionBtnText}>{activeSlot.toggleActive ? 'DESATIVAR' : 'ATIVAR'}</Text>
+                }
+              </TouchableOpacity>
+            )}
+
+            {/* Sem dano: usar direto */}
+            {activeSlot && isNoDamage && cooldown === 0 && (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionBtnUse, useLoading && styles.btnDisabled]}
+                onPress={() => withActionConfirm(handleUseSimple)}
+                disabled={useLoading}
+                activeOpacity={0.7}
+              >
+                {useLoading
+                  ? <ActivityIndicator size="small" color={Colors.text} />
+                  : <Text style={styles.actionBtnText}>USAR</Text>
+                }
+              </TouchableOpacity>
+            )}
+
+            {/* Passo 1: alvo → acerto (chama useSkill ao avançar) */}
+            {activeSlot && (cooldown === 0 || usageStarted) && !useResult && !skill.isPassive && !skill.toggle && hasCombat && useStep === 'target' && (() => {
+              const isMulti = !!skill?.multiTarget;
+              const noTarget = isMulti ? selectedTargets.length === 0 : !selectedTarget;
+              return (
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.actionBtnUse, (noTarget || useLoading) && styles.btnDisabled]}
+                onPress={() => withActionConfirm(handleAdvanceToHit)}
+                disabled={noTarget || useLoading}
                 activeOpacity={0.7}
               >
                 {useLoading
@@ -736,10 +968,11 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                   : <Text style={styles.actionBtnText}>ROLAR ACERTO →</Text>
                 }
               </TouchableOpacity>
-            )}
+              );
+            })()}
 
             {/* Passo 2: hit → errou debita custo, acertou vai para dano */}
-            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && hasCombat && useStep === 'hit' && (
+            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && hasCombat && useStep === 'hit' && (
               <>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: Colors.danger }]}
@@ -752,7 +985,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                   style={[styles.actionBtn, { backgroundColor: '#16a34a' }, !validHit && styles.btnDisabled]}
                   onPress={() => {
                     if (!validHit) return;
-                    setIsCrit(hitValue === 20);
+                    setIsCrit(hitValue >= (skill.critThreshold ?? 20));
                     setUseStep('damage');
                   }}
                   disabled={!validHit}
@@ -764,8 +997,8 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             )}
 
             {/* Passo 3: dano → solicitar dano ou usar sem combate */}
-            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && useStep === 'damage' && (
-              hasCombat && selectedTarget ? (
+            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && useStep === 'damage' && (
+              hasCombat && (selectedTarget || selectedTargets.length > 0) ? (
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.actionBtnUse, applyingDmg && styles.btnDisabled]}
                   onPress={handleRequestDamage}
@@ -780,7 +1013,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               ) : (
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.actionBtnUse, (useLoading || (!hasCombat && usageStarted)) && styles.btnDisabled]}
-                  onPress={!hasCombat ? handleUseSkillNoCombat : handleUseSkillNoCombat}
+                  onPress={() => withActionConfirm(handleUseSkillNoCombat)}
                   disabled={useLoading || (!hasCombat && usageStarted)}
                   activeOpacity={0.7}
                 >
@@ -797,7 +1030,24 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
         </View>
       </View>
     </Modal>
-  );
+
+    <ConfirmModal
+      visible={actionConfirmOpen}
+      title="USAR HABILIDADE"
+      message={buildActionMessage()}
+      confirmLabel="CONFIRMAR"
+      onConfirm={() => {
+        setActionConfirmOpen(false);
+        markActionsUsed();
+        if (pendingActionHandler) pendingActionHandler();
+        setPendingActionHandler(null);
+      }}
+      onCancel={() => {
+        setActionConfirmOpen(false);
+        setPendingActionHandler(null);
+      }}
+    />
+  </>);
 }
 
 const styles = StyleSheet.create({
@@ -903,11 +1153,6 @@ const styles = StyleSheet.create({
   diceModValue:   { fontFamily: Fonts.title, fontSize: 22, color: Colors.muted },
   diceResult:     { fontFamily: Fonts.title, fontSize: 36, color: Colors.tealBright },
   diceRow:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  diceInput: {
-    width: 60, height: 40, borderWidth: 1, borderColor: Colors.ember,
-    borderRadius: 3, backgroundColor: Colors.surface,
-    fontFamily: Fonts.title, fontSize: 20, color: Colors.ember, textAlign: 'center',
-  },
   modText:     { fontFamily: Fonts.title, fontSize: 13, color: Colors.muted },
   previewText: { fontFamily: Fonts.title, fontSize: 20, color: Colors.tealBright },
 
@@ -988,6 +1233,16 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   targetBtnSelected: { borderColor: Colors.danger, backgroundColor: 'rgba(239,68,68,0.08)' },
+  targetBtnDisabled: { opacity: 0.4 },
+  multiTargetLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
+  multiTargetBreakdown: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 3,
+    backgroundColor: Colors.surface, padding: 8, gap: 4,
+  },
+  multiTargetBreakdownLabel: { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 2, marginBottom: 2 },
+  multiTargetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  multiTargetRowName: { flex: 1, fontFamily: Fonts.body, fontSize: 12, color: Colors.muted },
+  multiTargetRowDmg: { fontFamily: Fonts.title, fontSize: 16, color: Colors.ember },
   targetIcon:  { fontSize: 11, width: 14, textAlign: 'center' as const },
   targetName:  { flex: 1, fontFamily: Fonts.body, fontSize: 12, color: Colors.text },
   targetHp:    { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted },

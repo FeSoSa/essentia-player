@@ -218,6 +218,84 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
               <Text style={styles.descricaoMuted}>Sem descrição.</Text>
             )}
 
+            {/* Efeito ao usar */}
+            {item.onUseEffect && (() => {
+              const e = item.onUseEffect!;
+              const effectColor = e.color ?? '#a855f7';
+              const regenHp = e.effects?.find(x => x.trigger === 'on_turn_start' && x.type === 'heal_hp')?.value;
+              const regenFlow = e.effects?.find(x => x.trigger === 'on_turn_start' && x.type === 'heal_flow')?.value;
+              const hasEffectBonus = e.attributeBonus && Object.keys(e.attributeBonus).length > 0;
+              const hasExpire = !!e.onExpire;
+              return (
+                <View style={[styles.effectBox, { borderColor: effectColor + '55' }]}>
+                  <View style={styles.effectHeader}>
+                    <View style={[styles.effectDot, { backgroundColor: effectColor }]} />
+                    <Text style={[styles.effectTitle, { color: effectColor }]}>
+                      {e.name || 'Efeito ao usar'}
+                    </Text>
+                    <Text style={[styles.effectDuration, { color: effectColor + 'aa' }]}>
+                      {e.durationTurns === -1 ? '∞' : `${e.durationTurns}t`}
+                    </Text>
+                  </View>
+                  {e.desc ? <Text style={styles.effectDesc}>{e.desc}</Text> : null}
+                  {(e.instantHealHp || e.instantHealFlow || regenHp || regenFlow || hasEffectBonus) && (
+                    <View style={styles.effectStats}>
+                      {e.instantHealHp != null && e.instantHealHp > 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>+{e.instantHealHp} HP</Text>
+                        </View>
+                      )}
+                      {e.instantHealFlow != null && e.instantHealFlow > 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>+{e.instantHealFlow} Flow</Text>
+                        </View>
+                      )}
+                      {regenHp != null && regenHp > 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>+{regenHp} HP/turno</Text>
+                        </View>
+                      )}
+                      {regenFlow != null && regenFlow > 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>+{regenFlow} Flow/turno</Text>
+                        </View>
+                      )}
+                      {hasEffectBonus && Object.entries(e.attributeBonus!).map(([attr, val]) => (
+                        <View key={attr} style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>
+                            {ATTR_ABBREV[attr] ?? attr.toUpperCase()} {val > 0 ? `+${val}` : val}
+                          </Text>
+                        </View>
+                      ))}
+                      {e.hitBonus != null && e.hitBonus !== 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>Acerto {e.hitBonus > 0 ? `+${e.hitBonus}` : e.hitBonus}</Text>
+                        </View>
+                      )}
+                      {e.attackBonus != null && e.attackBonus !== 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>Ataque {e.attackBonus > 0 ? `+${e.attackBonus}` : e.attackBonus}</Text>
+                        </View>
+                      )}
+                      {e.damageBonus != null && e.damageBonus !== 0 && (
+                        <View style={styles.effectPill}>
+                          <Text style={styles.effectPillText}>Dano {e.damageBonus > 0 ? `+${e.damageBonus}` : e.damageBonus}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  {hasExpire && e.onExpire && (
+                    <View style={[styles.effectExpire, { borderColor: (e.onExpire.color ?? '#71717a') + '66' }]}>
+                      <Text style={[styles.effectExpireLabel, { color: e.onExpire.color ?? '#71717a' }]}>
+                        Ao expirar: {e.onExpire.name || 'efeito'}
+                        {e.onExpire.durationTurns === -1 ? ' · ∞' : ` · ${e.onExpire.durationTurns}t`}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
+
             <Text style={styles.qtd}>Quantidade: {item.qty}</Text>
 
           </ScrollView>
@@ -293,4 +371,18 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   confirmText: { fontFamily: Fonts.title, fontSize: 11, color: Colors.text, letterSpacing: 2 },
+  effectBox: {
+    marginTop: 8, borderWidth: 1, borderRadius: 6,
+    padding: 10, gap: 6,
+  },
+  effectHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  effectDot: { width: 6, height: 6, borderRadius: 3 },
+  effectTitle: { fontFamily: Fonts.title, fontSize: 11, letterSpacing: 1, flex: 1 },
+  effectDuration: { fontFamily: Fonts.title, fontSize: 10 },
+  effectDesc: { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, lineHeight: 17 },
+  effectStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  effectPill: { backgroundColor: Colors.surface, borderRadius: 3, paddingHorizontal: 6, paddingVertical: 2 },
+  effectPillText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.text },
+  effectExpire: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4 },
+  effectExpireLabel: { fontFamily: Fonts.title, fontSize: 9, letterSpacing: 1 },
 });
