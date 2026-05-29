@@ -54,8 +54,15 @@ export function InventarioScreen() {
     if (req.level != null && player.char.level < req.level)
       return `Requer nível ${req.level} (atual: ${player.char.level})`;
     if (req.attributes) {
+      const ABBREV_TO_KEY: Record<string, keyof typeof effectiveAttrs> = {
+        FOR: 'strength', AGI: 'agility', INT: 'intelligence',
+        RES: 'resistance', FLX: 'flow', SAB: 'wisdom', PRE: 'presence', DEF: 'defense',
+        strength: 'strength', agility: 'agility', intelligence: 'intelligence',
+        resistance: 'resistance', flow: 'flow', wisdom: 'wisdom', presence: 'presence', defense: 'defense',
+      };
       for (const [attr, needed] of Object.entries(req.attributes)) {
-        const have = (effectiveAttrs[attr as keyof typeof effectiveAttrs] ?? 0) as number;
+        const key = ABBREV_TO_KEY[attr] ?? ABBREV_TO_KEY[attr.toUpperCase()];
+        const have = key ? (effectiveAttrs[key] ?? 0) : 0;
         if (have < needed) {
           const abbrev = { strength:'FOR', agility:'AGI', intelligence:'INT', resistance:'RES', flow:'FLX', wisdom:'SAB', presence:'PRE', defense:'DEF' }[attr] ?? attr.toUpperCase();
           return `Requer ${abbrev} ${needed} (atual: ${have})`;

@@ -24,6 +24,10 @@ const ATTR_LABELS: Record<string, string> = {
   defense: 'DEF',
 };
 
+function attrLabel(key: string): string {
+  return ATTR_LABELS[key] ?? key.slice(0, 3).toUpperCase();
+}
+
 const ATTR_ORDER = ['strength', 'agility', 'intelligence', 'resistance', 'flow', 'wisdom', 'presence', 'defense'];
 
 function bonus(val: number): string {
@@ -560,7 +564,7 @@ export function GeralScreen() {
                       <View style={detailStyles.bonusRow}>
                         {bonuses.map(([attr, val]) => (
                           <View key={attr} style={detailStyles.bonusPill}>
-                            <Text style={detailStyles.bonusText}>{attr.slice(0,3).toUpperCase()} {val > 0 ? '+' : ''}{val}</Text>
+                            <Text style={detailStyles.bonusText}>{attrLabel(attr)} {val > 0 ? '+' : ''}{val}</Text>
                           </View>
                         ))}
                       </View>

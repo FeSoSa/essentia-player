@@ -80,8 +80,16 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
     const req = item.requirements;
     if (req.level && (player?.char.level ?? 0) < req.level) return false;
     if (req.attributes && effectiveAttrs) {
+      const ABBREV_TO_KEY: Record<string, keyof typeof effectiveAttrs> = {
+        FOR: 'strength', AGI: 'agility', INT: 'intelligence',
+        RES: 'resistance', FLX: 'flow', SAB: 'wisdom', PRE: 'presence', DEF: 'defense',
+        strength: 'strength', agility: 'agility', intelligence: 'intelligence',
+        resistance: 'resistance', flow: 'flow', wisdom: 'wisdom', presence: 'presence', defense: 'defense',
+      };
       for (const [attr, needed] of Object.entries(req.attributes)) {
-        if ((effectiveAttrs[attr as keyof typeof effectiveAttrs] ?? 0) < needed) return false;
+        const key = ABBREV_TO_KEY[attr] ?? ABBREV_TO_KEY[attr.toUpperCase()];
+        const have = key ? (effectiveAttrs[key] ?? 0) : 0;
+        if (have < needed) return false;
       }
     }
     return true;
@@ -195,7 +203,14 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
                     </View>
                   )}
                   {item.requirements.attributes && Object.entries(item.requirements.attributes).map(([attr, val]) => {
-                    const have = (effectiveAttrs?.[attr as keyof typeof effectiveAttrs] ?? 0) as number;
+                    const ABBREV_TO_KEY: Record<string, keyof NonNullable<typeof effectiveAttrs>> = {
+                      FOR: 'strength', AGI: 'agility', INT: 'intelligence',
+                      RES: 'resistance', FLX: 'flow', SAB: 'wisdom', PRE: 'presence', DEF: 'defense',
+                      strength: 'strength', agility: 'agility', intelligence: 'intelligence',
+                      resistance: 'resistance', flow: 'flow', wisdom: 'wisdom', presence: 'presence', defense: 'defense',
+                    };
+                    const key = ABBREV_TO_KEY[attr] ?? ABBREV_TO_KEY[attr.toUpperCase()];
+                    const have = key ? ((effectiveAttrs?.[key] ?? 0) as number) : 0;
                     const unmet = have < val;
                     return (
                       <View key={attr} style={[styles.bonusPill, { backgroundColor: unmet ? Colors.danger + '33' : Colors.surface }]}>

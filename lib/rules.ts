@@ -30,21 +30,21 @@ export function getAttrCost(val: number): number {
 
 export const ATTRIBUTE_POINTS_PER_LEVEL = 3;
 
-const EXP_TABLE: readonly number[] = [
-  0, 0, 100, 250, 450, 700, 1000, 1350, 1750, 2200,
-  2700, 3300, 4000, 4800, 5700, 6700, 7800, 9000, 10300, 11700, 13200,
-];
-
-export function expForLevel(level: number): number {
-  if (level <= 1) return 0;
-  if (level <= 20) return EXP_TABLE[level];
-  return EXP_TABLE[20] + (level - 20) * 2000;
+export function xpParaNivel(n: number): number {
+  if (n <= 1) return 0;
+  if (n <= 20) return 75 * (n * (n + 1) / 2 - 1) - 50 * (n - 1);
+  const m = n - 20;
+  return 14725 + m * (2750 + 150 * m);
 }
 
 export function xpProgress(totalExp: number, level: number): { xpInLevel: number; xpNeeded: number } {
-  const floor = expForLevel(level);
-  const next  = expForLevel(level + 1);
-  return { xpInLevel: totalExp - floor, xpNeeded: next - floor };
+  const floor   = xpParaNivel(level);
+  const next    = xpParaNivel(level + 1);
+  const xpNeeded = next - floor;
+  return {
+    xpInLevel: Math.max(0, Math.min(xpNeeded, totalExp - floor)),
+    xpNeeded,
+  };
 }
 
 export function initiativeBonus(agiMod: number): number {

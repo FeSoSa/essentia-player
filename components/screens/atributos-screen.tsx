@@ -23,18 +23,22 @@ type Pending = { key: AtribKey; label: string; cost: number };
 
 export function AtributosScreen() {
   const player = usePlayerStore((s) => s.player)!;
+  const setPlayer = usePlayerStore((s) => s.setPlayer);
   const expAvailable = player.exp.available;
   const [pending, setPending] = useState<Pending | null>(null);
 
-  const agiMod = getModifier(player.attributes.agility);
+  const effective = player.effectiveAttributes ?? player.attributes;
+
+  const agiMod = getModifier(effective.agility);
   const initBonus = initiativeBonus(agiMod);
-  const pvMax = 20 + player.attributes.resistance * 10;
-  const esMax = 20 + player.attributes.flow * 20;
+  const pvMax = 20 + effective.resistance * 10;
+  const esMax = 20 + effective.flow * 20;
 
   const handleConfirm = async () => {
     if (!pending) return;
     setPending(null);
-    await updateAttribute(player.id, pending.key, 1);
+    const updated = await updateAttribute(player.id, pending.key, 1);
+    setPlayer(updated);
   };
 
   return (
@@ -44,22 +48,28 @@ export function AtributosScreen() {
         <View style={styles.tableCol}>
           <View style={styles.tableHeader}>
             <Text style={[styles.headerCell, { flex: 3 }]}>ATRIBUTO</Text>
-            <Text style={[styles.headerCell, { flex: 1, textAlign: 'center' }]}>VALOR</Text>
+            <Text style={[styles.headerCell, { flex: 1, textAlign: 'center' }]}>BASE</Text>
+            <Text style={[styles.headerCell, { flex: 1, textAlign: 'center' }]}>FINAL</Text>
             <Text style={[styles.headerCell, { flex: 1, textAlign: 'center' }]}>MOD</Text>
             <View style={{ flex: 1 }} />
           </View>
 
           {ATRIBUTOS.map(({ key, label }, idx) => {
-            const val = player.attributes[key] ?? 0;
-            const mod = getModifier(val);
-            const cost = getAttrCost(val);
+            const base = player.attributes[key] ?? 0;
+            const final = effective[key] ?? base;
+            const mod = getModifier(final);
+            const cost = getAttrCost(base);
             const canAfford = expAvailable >= cost;
-            const atCap = val >= 40;
+            const atCap = base >= 40;
+            const hasBonus = final !== base;
             return (
               <View key={key} style={[styles.row, idx % 2 === 1 && styles.rowAlt]}>
                 <Text style={[styles.cell, { flex: 3 }, styles.atribName]}>{label}</Text>
-                <Text style={[styles.cell, { flex: 1 }, styles.atribValue]}>
-                  {val}
+                <Text style={[styles.cell, { flex: 1 }, styles.atribBase]}>
+                  {base}
+                </Text>
+                <Text style={[styles.cell, { flex: 1 }, styles.atribValue, hasBonus && styles.atribValueBonus]}>
+                  {final}
                 </Text>
                 <Text style={[styles.cell, { flex: 1 }, styles.atribMod]}>
                   {formatMod(mod)}
@@ -82,12 +92,15 @@ export function AtributosScreen() {
 
           {/* DEF — somente leitura */}
           {(() => {
-            const val = player.attributes.defense ?? 0;
-            const mod = getModifier(val);
+            const base = player.attributes.defense ?? 0;
+            const final = effective.defense ?? base;
+            const mod = getModifier(final);
+            const hasBonus = final !== base;
             return (
               <View style={[styles.row, ATRIBUTOS.length % 2 === 1 && styles.rowAlt]}>
                 <Text style={[styles.cell, { flex: 3 }, styles.atribName]}>Defesa</Text>
-                <Text style={[styles.cell, { flex: 1 }, styles.atribValue]}>{val}</Text>
+                <Text style={[styles.cell, { flex: 1 }, styles.atribBase]}>{base}</Text>
+                <Text style={[styles.cell, { flex: 1 }, styles.atribValue, hasBonus && styles.atribValueBonus]}>{final}</Text>
                 <Text style={[styles.cell, { flex: 1 }, styles.atribMod]}>{formatMod(mod)}</Text>
                 <View style={[styles.cell, { flex: 1 }]} />
               </View>
@@ -160,7 +173,9 @@ const styles = StyleSheet.create({
   rowAlt: { backgroundColor: Colors.surface },
   cell: { paddingVertical: 10, paddingHorizontal: 10 },
   atribName: { fontFamily: Fonts.bodySemiBold, fontSize: 15, color: Colors.text },
+  atribBase: { fontFamily: Fonts.title, fontSize: 16, color: Colors.muted, textAlign: 'center' },
   atribValue: { fontFamily: Fonts.title, fontSize: 22, color: Colors.ember, textAlign: 'center' },
+  atribValueBonus: { color: Colors.tealBright },
   atribMod: { fontFamily: Fonts.title, fontSize: 16, color: Colors.muted, textAlign: 'center' },
   plusBtn: {
     width: 30, height: 30, borderWidth: 1, borderColor: Colors.ember,
