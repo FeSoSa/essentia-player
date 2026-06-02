@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Linking } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts } from '@/constants/theme';
@@ -11,11 +12,12 @@ type TabConfig = {
   label: string;
 };
 
-const TABS: TabConfig[] = [
+const BASE_TABS: TabConfig[] = [
   { id: 'mapa',        icon: 'map-outline',                    label: 'Mapa'   },
   { id: 'geral',       icon: 'shield-account',                 label: 'Geral'  },
   { id: 'atributos',   icon: 'chart-bar',                      label: 'Atribs' },
   { id: 'inventario',  icon: 'briefcase-outline',               label: 'Itens'  },
+  { id: 'loja',        icon: 'cart-outline',                   label: 'Loja'   },
   { id: 'habilidades', icon: 'lightning-bolt',                 label: 'Hab.'   },
   { id: 'docs',        icon: 'book-open-page-variant-outline', label: 'Docs'   },
   { id: 'config',      icon: 'cog-outline',                    label: 'Config' },
@@ -27,6 +29,16 @@ export function Sidebar() {
   const hasNewImage  = useGameStore((s) => s.hasNewImage);
   const expAvailable = usePlayerStore((s) => s.player?.exp.available ?? 0);
   const codigo       = usePlayerStore((s) => s.player?.code);
+  const hasShops     = useGameStore((s) => s.shops.length > 0);
+
+  const TABS = BASE_TABS.filter((t) => t.id !== 'loja' || hasShops);
+
+  // Se estava na aba loja e ela sumiu, volta para geral
+  useEffect(() => {
+    if (!hasShops && activeTab === 'loja') {
+      setActiveTab('geral');
+    }
+  }, [hasShops]);
 
   return (
     <View style={styles.sidebar}>

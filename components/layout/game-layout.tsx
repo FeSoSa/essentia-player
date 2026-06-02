@@ -10,6 +10,7 @@ import { InventarioScreen } from '@/components/screens/inventario-screen';
 import { HabilidadesScreen } from '@/components/screens/habilidades-screen';
 import { DocsScreen } from '@/components/screens/docs-screen';
 import { ConfigScreen } from '@/components/screens/config-screen';
+import { LojaScreen } from '@/components/screens/loja-screen';
 import { FastActionOverlay } from '@/components/ui/fast-action-overlay';
 
 export function GameLayout() {
@@ -22,6 +23,7 @@ export function GameLayout() {
     geral: <GeralScreen />,
     atributos: <AtributosScreen />,
     inventario: <InventarioScreen />,
+    loja: <LojaScreen />,
     habilidades: <HabilidadesScreen />,
     docs: <DocsScreen />,
     config: <ConfigScreen />,

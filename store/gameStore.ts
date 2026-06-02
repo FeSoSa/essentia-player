@@ -1,8 +1,10 @@
 import { create } from 'zustand';
-import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, DamageResultNotification, CombatAlly } from '@/types';
+import type { TabId, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, DamageResultNotification, CombatAlly, Shop } from '@/types';
 
 interface GameStore {
   activeTab: TabId;
+  shops: Shop[];
+  setShops: (shops: Shop[]) => void;
   images: GameImage[];
   hasNewImage: boolean;
   currentImageIndex: number;
@@ -39,6 +41,8 @@ interface GameStore {
 
 export const useGameStore = create<GameStore>((set, get) => ({
   activeTab: 'geral',
+  shops: [],
+  setShops: (shops) => set({ shops }),
   images: [],
   hasNewImage: false,
   currentImageIndex: 0,

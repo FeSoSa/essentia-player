@@ -5,10 +5,10 @@ import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { connectStomp, disconnectStomp } from '@/lib/socket';
 import { getPlayerId, getPlayerCode, clearSession } from '@/lib/storage';
-import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getCombatAllies, getImages, getCollectiveBars, getTurnState, updateSlot } from '@/lib/api';
+import { login, getSkillTree, getEssencias, getCombatEnemies, getCombatBosses, getCombatAllies, getImages, getCollectiveBars, getTurnState, updateSlot, getActiveShops } from '@/lib/api';
 import { GameLayout } from '@/components/layout/game-layout';
 import { Colors } from '@/constants/theme';
-import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, CombatAlly } from '@/types';
+import type { Player, GameImage, FastAction, InitiativeEntry, EnemyInstance, BossInstance, CollectiveBar, CombatAlly, Shop } from '@/types';
 import { useSobrecargaStore } from '@/store/sobrecargaStore';
 import { findInvalidEquippedSlots } from '@/lib/skill-validation';
 // GameImage used in STOMP handler type annotation below
@@ -31,6 +31,7 @@ export default function GameScreen() {
   const setBosses = useGameStore((s) => s.setBosses);
   const setAllies = useGameStore((s) => s.setAllies);
   const setCollectiveBars = useGameStore((s) => s.setCollectiveBars);
+  const setShops = useGameStore((s) => s.setShops);
   const setSobrecargaResult = useSobrecargaStore((s) => s.setResult);
 
   useEffect(() => {
@@ -146,6 +147,11 @@ export default function GameScreen() {
         setCollectiveBars(JSON.parse(msg.body) as CollectiveBar[]);
       });
 
+      stomp.subscribe('/topic/shops', (msg) => {
+        if (!mounted) return;
+        setShops(JSON.parse(msg.body) as Shop[]);
+      });
+
       stomp.subscribe(`/topic/player/${playerId}/sobrecarga-result`, (msg) => {
         if (!mounted) return;
         setSobrecargaResult(JSON.parse(msg.body));
@@ -158,9 +164,9 @@ export default function GameScreen() {
         setDamageResult(JSON.parse(msg.body));
       });
 
-      // Fetch skill tree, essencias catalog, and current combat state
+      // Fetch skill tree, essencias catalog, current combat state, and active shops
       try {
-        const [tree, essencias, enemies, bosses, allies, imgs, colBars] = await Promise.all([
+        const [tree, essencias, enemies, bosses, allies, imgs, colBars, shops] = await Promise.all([
           getSkillTree(playerId),
           getEssencias(),
           getCombatEnemies(),
@@ -168,6 +174,7 @@ export default function GameScreen() {
           getCombatAllies(),
           getImages(),
           getCollectiveBars(),
+          getActiveShops(),
         ]);
         if (mounted) {
           setSkillTree(tree);
@@ -177,6 +184,7 @@ export default function GameScreen() {
           setAllies(allies);
           setImages(imgs);
           setCollectiveBars(colBars);
+          setShops(shops);
         }
       } catch {
         // non-critical — screens will show empty states

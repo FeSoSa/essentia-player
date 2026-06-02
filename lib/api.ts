@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getServerIp, buildHttpBase } from './storage';
-import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar, MultiTargetDamagePayload } from '@/types';
+import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar, MultiTargetDamagePayload, Shop, ItemCatalogEntry } from '@/types';
 
 const api = axios.create();
 
@@ -182,5 +182,25 @@ export async function getTurnState(): Promise<{ initiative: import('@/types').In
 
 export async function getCollectiveBars(): Promise<CollectiveBar[]> {
   const res = await api.get<CollectiveBar[]>('/api/master/collective-bars');
+  return res.data;
+}
+
+export async function getActiveShops(): Promise<Shop[]> {
+  const res = await api.get<Shop[]>('/api/shops/active');
+  return res.data;
+}
+
+export async function getItemCatalog(): Promise<ItemCatalogEntry[]> {
+  const res = await api.get<ItemCatalogEntry[]>('/api/items');
+  return res.data;
+}
+
+export async function purchaseShopItem(
+  shopId: string,
+  playerId: string,
+  itemId: string,
+  qty: number
+): Promise<Player> {
+  const res = await api.post<Player>(`/api/shops/${shopId}/purchase`, { playerId, itemId, qty });
   return res.data;
 }

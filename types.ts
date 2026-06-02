@@ -1,4 +1,4 @@
-export type TabId = 'mapa' | 'geral' | 'atributos' | 'inventario' | 'habilidades' | 'docs' | 'config';
+export type TabId = 'mapa' | 'geral' | 'atributos' | 'inventario' | 'habilidades' | 'docs' | 'config' | 'loja';
 
 // --- Backend model types (field names match Spring Boot responses exactly) ---
 
@@ -116,6 +116,43 @@ export interface Item {
   rarity?: string;
   requirements?: ItemRequirements;
   onUseEffect?: OnUseEffect;
+  goldValue?: number;
+}
+
+export interface ItemCatalogEntry {
+  id: string;
+  name: string;
+  desc: string;
+  type: string;
+  icon?: string;
+  rarity?: string;
+  goldValue?: number;
+  // Weapon
+  weaponType?: string;
+  damageBase?: number;
+  damageAttribute?: string;
+  equilibrio?: number;
+  twoHanded?: boolean;
+  properties?: string;
+  // Armor
+  damageReduction?: number;
+  armorWeight?: string;
+  // Shared
+  attributeBonus?: Record<string, number>;
+  equipSlot?: string;
+  requirements?: ItemRequirements;
+}
+
+export interface ShopItem {
+  itemId: string;
+  stockLimit?: number;
+}
+
+export interface Shop {
+  id: string;
+  name: string;
+  items: ShopItem[];
+  active: boolean;
 }
 
 export interface DamageResult {
