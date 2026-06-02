@@ -133,6 +133,7 @@ export async function requestDamage(
     targetName: string;
     damage: number;
     costs?: Record<string, number>;
+    skillId?: string;
   }
 ): Promise<void> {
   await api.post(`/api/players/${playerId}/damage-request`, opts);

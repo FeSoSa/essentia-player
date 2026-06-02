@@ -11,7 +11,7 @@ import { GameIcon } from '@/components/ui/game-icon';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { adjustHp, adjustFlow, adjustEther, adjustPressao, executeDesvio } from '@/lib/api';
-import { SOBRECARGA_LEVELS, type Essencia, type EssenciaObtida, type StatusEffect, type Slot, type SkillTreeEntry } from '@/types';
+import { SOBRECARGA_LEVELS, type Essencia, type EssenciaObtida, type StatusEffect, type Slot, type SkillTreeEntry, type Immunity } from '@/types';
 
 const ATTR_LABELS: Record<string, string> = {
   strength: 'FOR',
@@ -76,10 +76,11 @@ export function GeralScreen() {
   const [sobrecargaOpen,    setSobrecargaOpen]    = useState(false);
   const [enemyDetailOpen,   setEnemyDetailOpen]   = useState(false);
   const [selectedEnemy,     setSelectedEnemy]     = useState<{
-    icon?: string; name: string; type: string;
+    icon?: string; imageUrl?: string; name: string; type: string;
     desc?: string; notes?: string;
     hpCurrent?: number; hpMax?: number;
     portraitUrl?: string; isAlly?: boolean;
+    immunities?: Immunity[];
   } | null>(null);
   const [basicAttackOpen, setBasicAttackOpen] = useState(false);
   const [desvioModalOpen, setDesvioModalOpen] = useState(false);
@@ -288,7 +289,7 @@ export function GeralScreen() {
                 const pct = e.hpMax > 0 ? Math.max(0, Math.min(e.hpCurrent / e.hpMax, 1)) : 0;
                 return (
                   <TouchableOpacity key={e.instanceId} style={styles.entityRow}
-                    onPress={() => { setSelectedEnemy({ icon: e.icon, name: e.name, type: e.type, desc: e.desc, notes: e.notes, hpCurrent: e.hpCurrent, hpMax: e.hpMax }); setEnemyDetailOpen(true); }}
+                    onPress={() => { setSelectedEnemy({ icon: e.icon, imageUrl: e.imageUrl, name: e.name, type: e.type, desc: e.desc, hpCurrent: e.hpCurrent, hpMax: e.hpMax, immunities: e.immunities ?? [] }); setEnemyDetailOpen(true); }}
                     activeOpacity={0.7}>
                     <Text style={styles.entityIcon}>{e.icon || '⚔'}</Text>
                     <View style={styles.entityInfo}>
@@ -306,7 +307,7 @@ export function GeralScreen() {
                 const pct = hpMax > 0 ? Math.max(0, Math.min(b.hpCurrent / hpMax, 1)) : 0;
                 return (
                   <TouchableOpacity key={b.instanceId} style={styles.entityRow}
-                    onPress={() => { setSelectedEnemy({ icon: b.icon, name: b.name, type: 'Boss', notes: b.notes, hpCurrent: b.hpCurrent, hpMax }); setEnemyDetailOpen(true); }}
+                    onPress={() => { setSelectedEnemy({ icon: b.icon, imageUrl: b.imageUrl, name: b.name, type: 'Boss', hpCurrent: b.hpCurrent, hpMax, immunities: b.immunities ?? [] }); setEnemyDetailOpen(true); }}
                     activeOpacity={0.7}>
                     <Text style={styles.entityIcon}>{b.icon || '★'}</Text>
                     <View style={styles.entityInfo}>
@@ -721,9 +722,18 @@ export function GeralScreen() {
                 <>
                   <View style={[entityDetailStyles.accentBar, { backgroundColor: accent }]} />
                   <View style={entityDetailStyles.body}>
+                    {/* Large image when imageUrl is set */}
+                    {!!selectedEnemy.imageUrl && (
+                      <Image
+                        source={{ uri: selectedEnemy.imageUrl }}
+                        style={entityDetailStyles.fullImage}
+                        resizeMode="cover"
+                      />
+                    )}
+
                     {/* Header: portrait/icon + name + type */}
                     <View style={entityDetailStyles.headerRow}>
-                      {selectedEnemy.portraitUrl
+                      {!selectedEnemy.imageUrl && (selectedEnemy.portraitUrl
                         ? <Image
                             source={{ uri: normalizePortraitUrl(selectedEnemy.portraitUrl) }}
                             style={entityDetailStyles.portrait}
@@ -732,8 +742,8 @@ export function GeralScreen() {
                         : <Text style={entityDetailStyles.iconText}>
                             {selectedEnemy.icon || (selectedEnemy.isAlly ? '🛡' : '⚔')}
                           </Text>
-                      }
-                      <View style={entityDetailStyles.headerText}>
+                      )}
+                      <View style={[entityDetailStyles.headerText, !!selectedEnemy.imageUrl && { marginLeft: 0 }]}>
                         <Text style={entityDetailStyles.name}>{selectedEnemy.name}</Text>
                         {!!selectedEnemy.type && (
                           <Text style={[entityDetailStyles.typeBadge, { color: accent }]}>{selectedEnemy.type.toUpperCase()}</Text>
@@ -752,6 +762,26 @@ export function GeralScreen() {
                             {selectedEnemy.hpCurrent} / {selectedEnemy.hpMax}
                           </Text>
                         )}
+                      </View>
+                    )}
+
+                    {/* Immunities */}
+                    {(selectedEnemy.immunities?.length ?? 0) > 0 && (
+                      <View style={entityDetailStyles.immunitiesSection}>
+                        <Text style={[entityDetailStyles.immunitiesLabel, { color: accent }]}>IMUNIDADES</Text>
+                        <View style={entityDetailStyles.immunitiesRow}>
+                          {selectedEnemy.immunities!.map((im, i) => (
+                            <View key={i} style={[entityDetailStyles.immunityBadge, { borderColor: accent + '55' }]}>
+                              {(im.isFlag || (!im.type && !im.icon)) ? (
+                                <Text style={[entityDetailStyles.immunityText, { color: accent }]}>🛡️ Imune</Text>
+                              ) : (
+                                <Text style={[entityDetailStyles.immunityText, { color: accent }]}>
+                                  {im.icon} {im.type}{im.kind === 'partial' ? ' (parcial)' : ''}
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                        </View>
                       </View>
                     )}
 
@@ -1637,6 +1667,12 @@ const entityDetailStyles = StyleSheet.create({
     height: 3,
     width: '100%',
   },
+  fullImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 4,
+    backgroundColor: Colors.surface,
+  },
   body: {
     padding: 16,
     gap: 10,
@@ -1713,5 +1749,35 @@ const entityDetailStyles = StyleSheet.create({
     fontSize: 12,
     color: Colors.faint,
     fontStyle: 'italic',
+  },
+  immunitiesSection: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.07)',
+  },
+  immunitiesLabel: {
+    fontFamily: Fonts.body,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  immunitiesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  immunityBadge: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  immunityText: {
+    fontFamily: Fonts.body,
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

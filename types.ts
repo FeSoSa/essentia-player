@@ -134,6 +134,7 @@ export interface MultiTargetDamagePayload {
     damage: number;
   }>;
   costs: Record<string, number>;
+  skillId?: string;
 }
 
 export interface WeaponEquip {
@@ -309,6 +310,15 @@ export interface SkillTreeEntry {
     damageMode: 'igual' | 'distribuido' | 'especifico';
     specificDamage?: number;
   };
+  onHitEffects?: Array<{
+    id: string;
+    name: string;
+    icon?: string;
+    color?: string;
+    desc?: string;
+    durationTurns: number;
+    effects: AutoEffect[];
+  }>;
 }
 
 // Game state types (from WebSocket topics)
@@ -345,6 +355,38 @@ export interface TurnUpdate {
   message: string;
 }
 
+export interface Immunity {
+  kind: 'total' | 'partial';
+  icon: string;
+  type: string;
+  sources?: string[];
+  isFlag?: boolean;
+}
+
+export interface GoldDrop {
+  tier: 'pobre' | 'comum' | 'rico' | 'tesouro';
+  min: number;
+  max: number;
+}
+
+export interface EnemyDrop {
+  name: string;
+  icon: string;
+  itemId?: string;
+  targetPlayerId?: string;
+  goldDrop?: GoldDrop;
+}
+
+export interface EnemyAttack {
+  name: string;
+  damage: string;
+  damageBase?: number;
+  damageAttribute?: string;
+  equilibrio?: number;
+  skillId?: string;
+  skillName?: string;
+}
+
 export interface CombatAlly {
   id: string;
   name: string;
@@ -353,6 +395,7 @@ export interface CombatAlly {
   hpCurrent: number;
   hpMax: number;
   portraitUrl?: string;
+  immunities?: Immunity[];
   desc?: string;
 }
 
@@ -362,8 +405,11 @@ export interface EnemyInstance {
   name: string;
   type: string;
   icon?: string;
+  imageUrl?: string;
   hpCurrent: number;
   hpMax: number;
+  immunities?: Immunity[];
+  statusEffects?: StatusEffect[];
   xp: number;
   desc?: string;
   notes?: string;
@@ -380,9 +426,12 @@ export interface BossInstance {
   templateId?: string;
   name: string;
   icon?: string;
+  imageUrl?: string;
   phases: BossPhase[];
   currentPhase: number;
   hpCurrent: number;
+  immunities?: Immunity[];
+  statusEffects?: StatusEffect[];
   xp: number;
   notes?: string;
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ScrollView,
-  ActivityIndicator, StyleSheet, TextInput,
+  ActivityIndicator, StyleSheet, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
 import { NumPad } from '@/components/ui/num-pad';
@@ -332,7 +332,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           }
           return { targetId: t.id, targetType: t.kind, targetName: name, damage: dmg };
         });
-        await requestMultiDamage(player.id, { requestId: reqId, targets, costs });
+        await requestMultiDamage(player.id, { requestId: reqId, targets, costs, skillId: skill.skillId });
       } else {
         if (!selectedTarget) return;
         const targetName = selectedTarget.kind === 'enemy'
@@ -345,6 +345,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           targetName,
           damage: finalDamage,
           costs,
+          skillId: skill.skillId,
         });
       }
       setPendingRequestId(reqId);
@@ -648,9 +649,9 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           </ScrollView>
           )}
 
-          {/* ── Steps de uso (fora do ScrollView, sem scroll) ── */}
+          {/* ── Steps de uso ── */}
           {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && !isNoDamage && (
-            <View style={styles.stepsContainer}>
+            <ScrollView style={styles.stepsScroll} contentContainerStyle={styles.stepsContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
               {/* PASSO 1 — ALVO */}
               {hasCombat && useStep === 'target' && (() => {
@@ -877,7 +878,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 </View>
               )}
 
-            </View>
+            </ScrollView>
           )}
 
           {error && <Text style={styles.errorText}>{error}</Text>}
@@ -1160,6 +1161,7 @@ const styles = StyleSheet.create({
   waitingText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic' },
   numPadRow:    { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   numPadResult: { flex: 1, gap: 4, justifyContent: 'flex-start' },
+  stepsScroll: { flexShrink: 1, maxHeight: 280 },
   stepsContainer: { gap: 8 },
   stepCol:      { gap: 8 },
   bonusRow:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
