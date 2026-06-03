@@ -195,6 +195,25 @@ export async function getItemCatalog(): Promise<ItemCatalogEntry[]> {
   return res.data;
 }
 
+export async function getPlayers(): Promise<import('@/types').Player[]> {
+  const res = await api.get<import('@/types').Player[]>('/api/master/players');
+  return res.data;
+}
+
+export async function transferItem(
+  senderId: string,
+  itemId: string,
+  targetPlayerId: string,
+  qty: number
+): Promise<import('@/types').Player> {
+  const res = await api.post<import('@/types').Player>(`/api/players/${senderId}/transfer-item`, {
+    itemId,
+    targetPlayerId,
+    qty,
+  });
+  return res.data;
+}
+
 export async function purchaseShopItem(
   shopId: string,
   playerId: string,

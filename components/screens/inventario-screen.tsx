@@ -1,14 +1,14 @@
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Colors, Fonts, RARITY_COLORS, RARITY_LABELS, type Rarity } from '@/constants/theme';
 import { ItemModal } from '@/components/ui/item-modal';
 import { resolveIcon } from '@/components/ui/game-icon';
-import { equipItem, unequipItem, updateSlot } from '@/lib/api';
+import { equipItem, unequipItem, updateSlot, getPlayers, transferItem } from '@/lib/api';
 import { usePlayerStore } from '@/store/playerStore';
 import { getArmorWeight, weaponDamageFormula } from '@/lib/rules';
 import { findInvalidEquippedSlots } from '@/lib/skill-validation';
-import type { Item, WeaponEquip } from '@/types';
+import type { Item, Player, WeaponEquip } from '@/types';
 
 function rarityColor(rarity?: string): string {
   if (rarity && rarity in RARITY_COLORS) return RARITY_COLORS[rarity as Rarity];
@@ -35,15 +35,41 @@ const EQUIPMENT_SLOTS: { key: EquipSlotKey; label: string; icon: string }[] = [
 
 type MenuState = { item: Item } | null;
 type ModalState = { item: Item; mode: 'details' | 'use' } | null;
+type TransferState = { item: Item } | null;
 
 export function InventarioScreen() {
   const player = usePlayerStore((s) => s.player)!;
   const setPlayer = usePlayerStore((s) => s.setPlayer);
   const [menu, setMenu] = useState<MenuState>(null);
   const [modal, setModal] = useState<ModalState>(null);
+  const [transfer, setTransfer] = useState<TransferState>(null);
+  const [otherPlayers, setOtherPlayers] = useState<Player[]>([]);
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   const pendentesCount = player.pendingRequests.length;
   const [equipError, setEquipError] = useState<string | null>(null);
+
+  useEffect(() => {
+    getPlayers()
+      .then((all) => setOtherPlayers(all.filter((p) => p.id !== player.id)))
+      .catch(() => {});
+  }, [player.id]);
+
+  async function handleTransfer(targetPlayer: Player) {
+    if (!transfer) return;
+    setTransferring(true);
+    setTransferError(null);
+    try {
+      const updated = await transferItem(player.id, transfer.item.id, targetPlayer.id, 1);
+      setPlayer(updated);
+      setTransfer(null);
+    } catch (e: any) {
+      setTransferError(e?.response?.data?.message ?? 'Erro ao transferir item.');
+    } finally {
+      setTransferring(false);
+    }
+  }
 
   const mainIsTwoHanded = player.equipment.mainHand?.twoHanded === true;
   const effectiveAttrs = player.effectiveAttributes ?? player.attributes;
@@ -286,6 +312,14 @@ export function InventarioScreen() {
                 <Text style={styles.menuOptionText}>Usar item</Text>
               </TouchableOpacity>
             )}
+            {otherPlayers.length > 0 && (
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => { setTransfer({ item: menu.item }); setMenu(null); }}
+              >
+                <Text style={styles.menuOptionText}>Transferir para jogador</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.menuOption, styles.menuCancel]} onPress={() => setMenu(null)}>
               <Text style={styles.menuCancelText}>Cancelar</Text>
             </TouchableOpacity>
@@ -299,6 +333,58 @@ export function InventarioScreen() {
         mode={modal?.mode ?? 'details'}
         onClose={() => setModal(null)}
       />
+
+      {/* Modal de transferência */}
+      {transfer && (
+        <View style={styles.menuOverlay}>
+          <View style={styles.menuCard}>
+            <Text style={styles.menuTitle}>Transferir</Text>
+            <Text style={styles.transferItemName}>{transfer.item.name}</Text>
+            {transferError && (
+              <Text style={styles.transferError}>{transferError}</Text>
+            )}
+            <ScrollView style={styles.playerList} showsVerticalScrollIndicator={false}>
+              {otherPlayers.map((p) => {
+                const isFull = p.items.filter((i) => i.type !== 'currency').length >= 16;
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.playerRow, isFull && styles.playerRowDisabled]}
+                    onPress={() => !isFull && !transferring && handleTransfer(p)}
+                    activeOpacity={isFull ? 1 : 0.7}
+                    disabled={isFull || transferring}
+                  >
+                    <View style={styles.playerRowInfo}>
+                      <Text style={[styles.playerName, isFull && { color: Colors.muted }]}>
+                        {p.char.name}
+                      </Text>
+                      <Text style={styles.playerSlots}>
+                        {p.items.filter((i) => i.type !== 'currency').length}/16 slots
+                        {isFull ? ' · inventário cheio' : ''}
+                      </Text>
+                    </View>
+                    {transferring ? (
+                      <ActivityIndicator size="small" color={Colors.ember} />
+                    ) : (
+                      <MaterialCommunityIcons
+                        name="send"
+                        size={16}
+                        color={isFull ? Colors.faint : Colors.ember}
+                      />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.menuOption, styles.menuCancel]}
+              onPress={() => { setTransfer(null); setTransferError(null); }}
+            >
+              <Text style={styles.menuCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -378,4 +464,22 @@ const styles = StyleSheet.create({
   menuOptionText: { fontFamily: Fonts.body, fontSize: 15, color: Colors.text },
   menuCancel: { borderBottomWidth: 0, marginTop: 4 },
   menuCancelText: { fontFamily: Fonts.body, fontSize: 14, color: Colors.muted, textAlign: 'center' },
+
+  transferItemName: {
+    fontFamily: Fonts.body, fontSize: 13, color: Colors.muted,
+    marginBottom: 10, marginTop: -4,
+  },
+  transferError: {
+    fontFamily: Fonts.body, fontSize: 12, color: Colors.danger,
+    marginBottom: 8,
+  },
+  playerList: { maxHeight: 200, marginBottom: 4 },
+  playerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  playerRowDisabled: { opacity: 0.45 },
+  playerRowInfo: { flex: 1 },
+  playerName: { fontFamily: Fonts.body, fontSize: 14, color: Colors.text },
+  playerSlots: { fontFamily: Fonts.body, fontSize: 11, color: Colors.faint, marginTop: 1 },
 });
