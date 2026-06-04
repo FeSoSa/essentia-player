@@ -245,44 +245,54 @@ export function InventarioScreen() {
             </View>
           </View>
 
+          <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
           <View style={styles.grid}>
-            {/* Filled item slots */}
-            {player.items.map((item) => {
-              const isEquipable = item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory';
-              const reqBlocked = isEquipable && checkRequirements(item) !== null;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.gridSlotFilled, { borderColor: rarityColor(item.rarity) }]}
-                  onPress={() => setMenu({ item })}
-                  activeOpacity={0.7}
-                >
-                  <MaterialCommunityIcons
-                    name={resolveIcon(item.icon)}
-                    size={16}
-                    color={reqBlocked ? Colors.muted : rarityColor(item.rarity)}
-                  />
-                  <Text style={[styles.itemName, reqBlocked && { color: Colors.muted }]} numberOfLines={2}>
-                    {item.name.slice(0, 12)}
-                  </Text>
-                  <View style={styles.qtdBadge}>
-                    <Text style={styles.qtdText}>{item.qty}</Text>
-                  </View>
-                  {reqBlocked && (
-                    <View style={styles.lockOverlay}>
-                      <MaterialCommunityIcons name="lock" size={10} color={Colors.muted} />
+            {Array.from({ length: Math.ceil((player.inventorySize ?? 18) / 6) }, (_, row) => (
+              <View key={row} style={styles.gridRow}>
+                {Array.from({ length: 6 }, (_, col) => {
+                  const i = row * 6 + col;
+                  const withinSize = i < (player.inventorySize ?? 18);
+                  const item = withinSize ? (player.items[i] ?? null) : null;
+                  const isLast = col === 5;
+                  const isEquipable = item && (item.type === 'weapon' || item.type === 'armor' || item.type === 'accessory');
+                  const reqBlocked = isEquipable && checkRequirements(item!) !== null;
+                  return (
+                    <View key={`slot-${i}`} style={[styles.gridSlot, isLast && styles.gridSlotLast, !withinSize && styles.gridSlotLocked]}>
+                      <TouchableOpacity
+                        style={[styles.gridSlotInner, item && { backgroundColor: Colors.card, borderColor: item ? rarityColor(item.rarity) : Colors.border }]}
+                        onPress={() => item && setMenu({ item })}
+                        activeOpacity={item ? 0.7 : 1}
+                      >
+                        {item ? (
+                          <>
+                            <MaterialCommunityIcons
+                              name={resolveIcon(item.icon)}
+                              size={13}
+                              color={reqBlocked ? Colors.muted : rarityColor(item.rarity)}
+                            />
+                            <Text style={[styles.itemName, reqBlocked && { color: Colors.muted }]} numberOfLines={2}>
+                              {item.name.slice(0, 10)}
+                            </Text>
+                            <View style={styles.qtdBadge}>
+                              <Text style={styles.qtdText}>{item.qty}</Text>
+                            </View>
+                            {reqBlocked && (
+                              <View style={styles.lockOverlay}>
+                                <MaterialCommunityIcons name="lock" size={10} color={Colors.muted} />
+                              </View>
+                            )}
+                          </>
+                        ) : withinSize ? (
+                          <Text style={styles.slotNumber}>{i + 1}</Text>
+                        ) : null}
+                      </TouchableOpacity>
                     </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-            {/* Empty slots to fill to 16 */}
-            {Array.from({ length: Math.max(0, 16 - player.items.length) }).map((_, i) => (
-              <View key={`empty-${i}`} style={styles.gridSlotEmpty}>
-                <Text style={styles.slotNumber}>{player.items.length + i + 1}</Text>
+                  );
+                })}
               </View>
             ))}
           </View>
+          </ScrollView>
         </View>
       </View>
 
@@ -345,7 +355,7 @@ export function InventarioScreen() {
             )}
             <ScrollView style={styles.playerList} showsVerticalScrollIndicator={false}>
               {otherPlayers.map((p) => {
-                const isFull = p.items.filter((i) => i.type !== 'currency').length >= 16;
+                const isFull = p.items.filter((i) => i.type !== 'currency').length >= (p.inventorySize ?? 18);
                 return (
                   <TouchableOpacity
                     key={p.id}
@@ -359,7 +369,7 @@ export function InventarioScreen() {
                         {p.char.name}
                       </Text>
                       <Text style={styles.playerSlots}>
-                        {p.items.filter((i) => i.type !== 'currency').length}/16 slots
+                        {p.items.filter((i) => i.type !== 'currency').length}/{p.inventorySize ?? 18} slots
                         {isFull ? ' · inventário cheio' : ''}
                       </Text>
                     </View>
@@ -411,7 +421,7 @@ const styles = StyleSheet.create({
   equipItemName: { fontFamily: Fonts.body, fontSize: 13, color: Colors.text },
   textMuted: { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, fontStyle: 'italic' },
   baseDmgText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.gold, letterSpacing: 0.5 },
-  inventCol: { flex: 1, padding: 12 },
+  inventCol: { flex: 1, overflow: 'hidden', flexDirection: 'column', padding: 12 },
   inventHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   ouroBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
@@ -419,17 +429,17 @@ const styles = StyleSheet.create({
     borderRadius: 3, paddingHorizontal: 8, paddingVertical: 3,
   },
   ouroText: { fontFamily: Fonts.title, fontSize: 13, color: Colors.gold },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  gridSlotFilled: {
-    width: 68, height: 68, backgroundColor: Colors.card, borderWidth: 1,
-    borderColor: Colors.ember, borderRadius: 3, justifyContent: 'center',
-    alignItems: 'center', padding: 4, position: 'relative',
+  grid: { flexDirection: 'column' },
+  gridRow: { flexDirection: 'row', marginBottom: 8, height: 80, overflow: 'hidden' },
+  gridSlot: { flex: 1, marginRight: 8 },
+  gridSlotLast: { marginRight: 0 },
+  gridSlotInner: {
+    flex: 1, backgroundColor: Colors.surface, borderWidth: 1,
+    borderColor: Colors.border, borderRadius: 3, justifyContent: 'center',
+    alignItems: 'center', padding: 3, position: 'relative',
   },
-  gridSlotEmpty: {
-    width: 68, height: 68, backgroundColor: Colors.surface, borderWidth: 1,
-    borderColor: Colors.border, borderRadius: 3, justifyContent: 'center', alignItems: 'center',
-  },
-  itemName: { fontFamily: Fonts.body, fontSize: 11, color: Colors.text, textAlign: 'center' },
+  gridSlotLocked: { opacity: 0 },
+  itemName: { fontFamily: Fonts.body, fontSize: 9, color: Colors.text, textAlign: 'center' },
   qtdBadge: {
     position: 'absolute', bottom: 3, right: 4,
     backgroundColor: Colors.emberDim, borderRadius: 2, paddingHorizontal: 4, paddingVertical: 1,

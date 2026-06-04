@@ -311,6 +311,9 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
               );
             })()}
 
+            {item.goldValue != null && item.goldValue > 0 && (
+              <Text style={styles.qtd}>Valor: {item.goldValue} Tyd</Text>
+            )}
             <Text style={styles.qtd}>Quantidade: {item.qty}</Text>
 
           </ScrollView>

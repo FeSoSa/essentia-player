@@ -282,6 +282,7 @@ export interface Player {
   customBars?: CustomBar[];
   sobrecargaAtiva?: boolean;
   sobrecargaNivel?: number;
+  inventorySize?: number;
 }
 
 export interface DamageResultNotification {
