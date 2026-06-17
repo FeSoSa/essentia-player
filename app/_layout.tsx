@@ -6,7 +6,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { setStatusBarHidden } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
 import { useEffect } from "react";
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 
@@ -14,8 +14,10 @@ SplashScreen.preventAutoHideAsync();
 
 async function enterImmersiveMode() {
   setStatusBarHidden(true, "fade");
-  await NavigationBar.setVisibilityAsync("hidden");
-  await NavigationBar.setBehaviorAsync("overlay-swipe");
+  if (Platform.OS === "android") {
+    await NavigationBar.setVisibilityAsync("hidden");
+    await NavigationBar.setBehaviorAsync("overlay-swipe");
+  }
 }
 
 export default function RootLayout() {
