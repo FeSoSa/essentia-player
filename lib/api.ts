@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getServerIp, buildHttpBase } from './storage';
-import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar, MultiTargetDamagePayload, Shop, ItemCatalogEntry } from '@/types';
+import type { Player, SkillTreeEntry, Essencia, EnemyInstance, BossInstance, GameImage, DamageResult, CollectiveBar, MultiTargetDamagePayload, Shop, ItemCatalogEntry, AutoEffect } from '@/types';
 
 const api = axios.create();
 
@@ -144,6 +144,18 @@ export async function requestMultiDamage(
   payload: MultiTargetDamagePayload
 ): Promise<void> {
   await api.post(`/api/players/${playerId}/multi-damage-request`, payload);
+}
+
+export async function requestEffects(
+  playerId: string,
+  opts: {
+    requestId: string;
+    targets: Array<{ targetId: string; targetType: 'enemy' | 'boss'; targetName: string }>;
+    onHitEffects: Array<{ id: string; name: string; icon?: string; color?: string; desc?: string; durationTurns: number; effects: AutoEffect[] }>;
+    skillId?: string;
+  }
+): Promise<void> {
+  await api.post(`/api/players/${playerId}/effect-request`, opts);
 }
 
 export async function requestSobrecarga(playerId: string, nivel: number): Promise<void> {

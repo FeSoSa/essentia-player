@@ -8,7 +8,7 @@ import { NumPad } from '@/components/ui/num-pad';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
-import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, requestMultiDamage, skillMiss } from '@/lib/api';
+import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, requestMultiDamage, requestEffects, skillMiss } from '@/lib/api';
 import { getModifier, formatMod, resolveAtributeMod } from '@/lib/rules';
 import type { SkillTreeEntry, Slot, DamageResult, Attributes } from '@/types';
 
@@ -333,6 +333,20 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           return { targetId: t.id, targetType: t.kind, targetName: name, damage: dmg };
         });
         await requestMultiDamage(player.id, { requestId: reqId, targets, costs, skillId: skill.skillId });
+        if (skill.onHitEffects && skill.onHitEffects.length > 0) {
+          await requestEffects(player.id, {
+            requestId: reqId,
+            targets: selectedTargets.map((t) => ({
+              targetId: t.id,
+              targetType: t.kind,
+              targetName: t.kind === 'enemy'
+                ? (enemies.find((e) => e.instanceId === t.id)?.name ?? 'Inimigo')
+                : (bosses.find((b) => b.instanceId === t.id)?.name ?? 'Boss'),
+            })),
+            onHitEffects: skill.onHitEffects,
+            skillId: skill.skillId,
+          });
+        }
       } else {
         if (!selectedTarget) return;
         const targetName = selectedTarget.kind === 'enemy'
@@ -347,6 +361,14 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           costs,
           skillId: skill.skillId,
         });
+        if (skill.onHitEffects && skill.onHitEffects.length > 0) {
+          await requestEffects(player.id, {
+            requestId: reqId,
+            targets: [{ targetId: selectedTarget.id, targetType: selectedTarget.kind, targetName }],
+            onHitEffects: skill.onHitEffects,
+            skillId: skill.skillId,
+          });
+        }
       }
       setPendingRequestId(reqId);
       setDamageResult(null);
