@@ -18,7 +18,7 @@ const WEAPON_TYPE_LABEL: Record<string, string> = {
   curta: 'Arma curta', média: 'Arma média', pesada: 'Arma pesada',
   ranged: 'Ranged', unarmed: 'Desarmado',
   espadas: 'Espadas', rapieiras: 'Rapieiras', alabardas: 'Alabardas',
-  lancas: 'Lanças', 'machados-de-guerra': 'Machados de guerra', martelos: 'Martelos',
+  lancas: 'Lanças', 'machados-de-guerra': 'Machados de guerra', machadinhas: 'Machadinhas', martelos: 'Martelos',
   'armas-colossais': 'Armas colossais', adagas: 'Adagas', garras: 'Garras',
   'a-distancia': 'À distância', 'luvas-manoplas': 'Luvas & manoplas', escudos: 'Escudos',
 };

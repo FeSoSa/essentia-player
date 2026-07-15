@@ -150,9 +150,10 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const effectiveDiceValue = isPressaoMode
     ? pressaoCombinedValue + attackBonusTotal
     : diceValue + attackBonusTotal;
+  const isWeaponDamage = skill?.damageSource === 'weapon';
   const isNoDamage     = !skill.danoFormula && !skill.isPassive && !skill.toggle;
   const validForDamage = isPressaoMode ? validPressao : validDice;
-  const baseDamage = validForDamage
+  const baseDamage = !isWeaponDamage && validForDamage
     ? equilibrio != null
       ? (isCrit ? danoBase * 2 : danoBase) + Math.floor((effectiveDiceValue * modAtributo) / equilibrio)
       : (isCrit ? danoBase * 2 : danoBase)
@@ -161,9 +162,10 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const damageWithMaestria = baseDamage !== null
     ? maestriaBonus > 0 ? Math.round(baseDamage * (1 + maestriaBonus)) : baseDamage
     : null;
-  const damagePreview = damageWithMaestria !== null
-    ? damageWithMaestria + damageBonusTotal
-    : null;
+  // Dano de arma é calculado inteiramente pelo servidor (SkillUseService) — nunca há preview local.
+  const damagePreview = isWeaponDamage
+    ? null
+    : damageWithMaestria !== null ? damageWithMaestria + damageBonusTotal : null;
 
   function handleClose() {
     setError(null);
@@ -782,7 +784,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 <View style={styles.stepCol}>
                   {/* Linha superior: numpad + info */}
                   <View style={styles.stepInline}>
-                    {skill.danoFormula && !(hasCombat && isPressaoMode) ? (
+                    {skill.danoFormula && !isWeaponDamage && !(hasCombat && isPressaoMode) ? (
                       <NumPad
                         value={diceInput}
                         onChange={setDiceInput}
@@ -799,7 +801,9 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                       {skill.custo && skill.custo !== '—' && (
                         <Text style={styles.stepSub}>CUSTO  {skill.custo}</Text>
                       )}
-                      {skill.danoFormula ? (
+                      {isWeaponDamage ? (
+                        <Text style={[styles.stepSub, { marginTop: 4 }]}>Dano calculado pelo mestre ao confirmar</Text>
+                      ) : skill.danoFormula ? (
                         <>
                           <Text style={styles.stepBig}>{diceInput || '—'}</Text>
 

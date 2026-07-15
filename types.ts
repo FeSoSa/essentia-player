@@ -184,6 +184,7 @@ export interface WeaponEquip {
   damageBase?: number;
   damageAttribute?: string;
   equilibrio?: number;
+  critThreshold?: number;
 }
 
 export interface ArmorEquip {
@@ -333,6 +334,8 @@ export interface SkillTreeEntry {
   danoBase?: number;      // valor fixo de dano base
   atributo?: string;      // ex: "FOR", "AGI", "FOR/AGI"
   equilibrio?: number;    // divisor da escala de atributo; null = só dano_base
+  damageSource?: 'formula' | 'weapon'; // 'weapon' = dano calculado no servidor a partir da arma equipada
+  weaponSlot?: 'mainHand' | 'offHand';
   cooldownTurns?: number;    // turnos de cooldown após uso
   skillType?: string;        // "class" | "weapon" | "essencia" | "mestre"
   actionType?: 'main' | 'bonus' | 'both';

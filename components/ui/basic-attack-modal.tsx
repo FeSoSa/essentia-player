@@ -188,7 +188,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                       <Text style={styles.rollBreak}>
                         {hitRoll} {agiMod >= 0 ? `+${agiMod}` : agiMod}{hitBonusTotal !== 0 ? ` +${hitBonusTotal}` : ''}
                       </Text>
-                      {hitRoll === 20 && (
+                      {hitRoll >= (weapon?.critThreshold ?? 20) && (
                         <Text style={styles.critBadge}>CRÍTICO!</Text>
                       )}
                     </>
@@ -203,7 +203,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
                   style={[styles.actionBtn, !validHit && styles.actionBtnDisabled]}
                   onPress={() => {
                     if (!validHit) return;
-                    setIsCrit(hitRoll === 20);
+                    setIsCrit(hitRoll >= (weapon?.critThreshold ?? 20));
                     setStep('damage');
                   }}
                   disabled={!validHit}
