@@ -26,6 +26,11 @@ export function ConfigScreen() {
     router.replace('/');
   }
 
+  function handleReload() {
+    disconnectStomp();
+    router.replace('/game');
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -44,6 +49,14 @@ export function ConfigScreen() {
           placeholderTextColor={Colors.muted}
         />
         <Text style={styles.ipHint}>Alterações serão usadas na próxima conexão.</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>CONEXÃO</Text>
+        <TouchableOpacity style={styles.reloadBtn} onPress={handleReload} activeOpacity={0.8}>
+          <Text style={styles.reloadText}>RECARREGAR APP</Text>
+        </TouchableOpacity>
+        <Text style={styles.ipHint}>Use se algo não estiver atualizando (itens, status, combate…).</Text>
       </View>
 
       <View style={styles.spacer} />
@@ -78,6 +91,11 @@ const styles = StyleSheet.create({
   },
   ipHint: { fontFamily: Fonts.body, fontSize: 11, color: Colors.muted, marginTop: 6, fontStyle: 'italic' },
   spacer: { flex: 1 },
+  reloadBtn: {
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    paddingVertical: 14, alignItems: 'center', borderRadius: 3, width: 240,
+  },
+  reloadText: { fontFamily: Fonts.title, fontSize: 13, color: Colors.text, letterSpacing: 3 },
   sairBtn: { backgroundColor: Colors.danger, paddingVertical: 14, alignItems: 'center', borderRadius: 3 },
   sairText: { fontFamily: Fonts.title, fontSize: 13, color: Colors.text, letterSpacing: 3 },
 });

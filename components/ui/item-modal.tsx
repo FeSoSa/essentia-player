@@ -3,6 +3,7 @@ import { useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts, RARITY_COLORS, RARITY_LABELS, type Rarity } from '@/constants/theme';
 import { usePlayerStore } from '@/store/playerStore';
 import { requestItem } from '@/lib/api';
@@ -42,6 +43,7 @@ interface Props {
 }
 
 export function ItemModal({ visible, item, mode, onClose }: Props) {
+  const insets = useSafeAreaInsets();
   const player = usePlayerStore((s) => s.player);
   const playerId = player?.id;
   const [loading, setLoading] = useState(false);
@@ -102,7 +104,10 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
+        <View style={[
+          styles.card,
+          { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20), paddingLeft: Math.max(insets.left, 20), paddingRight: Math.max(insets.right, 20) },
+        ]}>
 
           {/* Header */}
           <View style={styles.header}>
@@ -120,11 +125,14 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
                 )}
               </View>
             </View>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtnBox} activeOpacity={0.7}>
+              <Text style={styles.closeBtn}>✕</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.divider} />
 
-          <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
 
             {/* Dano — arma */}
             {dmg && (
@@ -350,12 +358,20 @@ export function ItemModal({ visible, item, mode, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center' },
+  overlay: { flex: 1, backgroundColor: Colors.card },
   card: {
-    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 6, padding: 20, width: 360, gap: 12,
+    flex: 1,
+    backgroundColor: Colors.card,
+    gap: 12,
   },
-  header: { flexDirection: 'row', alignItems: 'flex-start' },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  closeBtnBox: {
+    width: 44, height: 44,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 6,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  closeBtn: { fontSize: 20, color: Colors.text },
   nome: { fontFamily: Fonts.title, fontSize: 18, letterSpacing: 0.5, marginBottom: 4 },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   tipo: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },

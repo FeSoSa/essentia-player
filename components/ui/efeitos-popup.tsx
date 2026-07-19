@@ -2,6 +2,7 @@ import { Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'rea
 import { Colors, Fonts } from '@/constants/theme';
 import { usePlayerStore } from '@/store/playerStore';
 import { GameIcon } from '@/components/ui/game-icon';
+import { describeAutoEffect } from '@/lib/rules';
 
 interface Props {
   visible: boolean;
@@ -43,6 +44,11 @@ export function EfeitosPopup({ visible, onClose }: Props) {
                     </View>
                     <Text style={styles.name} numberOfLines={2}>{effect.name}</Text>
                     <Text style={styles.desc} numberOfLines={2}>{effect.desc}</Text>
+                    {effect.effects && effect.effects.length > 0 && (
+                      <Text style={styles.mods} numberOfLines={2}>
+                        {effect.effects.map(describeAutoEffect).join(' · ')}
+                      </Text>
+                    )}
                   </View>
                 );
               })}
@@ -134,5 +140,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.muted,
     lineHeight: 16,
+  },
+  mods: {
+    fontFamily: Fonts.bodySemiBold,
+    fontSize: 11,
+    color: Colors.ember,
+    lineHeight: 14,
   },
 });

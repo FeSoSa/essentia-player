@@ -27,7 +27,7 @@ function MaestrySection({
   const { level, totalUses, nextLevelUses, choices } = maestria;
   const [choosing, setChoosing] = useState<'aumento' | 'otimizacao' | null>(null);
 
-  const readyToLevelUp = level < 5 && totalUses >= nextLevelUses;
+  const readyToLevelUp = level < 5 && totalUses >= nextLevelUses && (choices?.length ?? 0) < level;
   const nextBonus = MASTERY_BONUSES[level + 1];
   const fillPct = level < 5 ? Math.min((totalUses / nextLevelUses) * 100, 100) : 100;
 

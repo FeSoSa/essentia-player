@@ -218,7 +218,7 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
                 const isLoading = loading === skill.skillId;
                 const isPresel  = skill.skillId === preselectedSkillId;
                 const group     = skillTypeGroup(skill);
-                const hasFlags  = skill.isPassive || skill.actionType || skill.pressaoDice || skill.multiTarget || skill.toggle;
+                const hasFlags  = skill.isPassive || skill.actionType || skill.pressaoDice || skill.multiTarget;
                 return (
                   <TouchableOpacity
                     key={skill.skillId}
@@ -258,11 +258,6 @@ export function SlotEditModal({ visible, slot, skillTree, preselectedSkillId, on
                           {skill.isPassive && (
                             <View style={[styles.flag, styles.flagPassiva]}>
                               <Text style={[styles.flagText, { color: Colors.tealBright }]}>PASSIVA</Text>
-                            </View>
-                          )}
-                          {skill.toggle && (
-                            <View style={[styles.flag, styles.flagToggle]}>
-                              <Text style={[styles.flagText, { color: Colors.gold }]}>SUSTENTADA</Text>
                             </View>
                           )}
                           <ActionFlag type={skill.actionType} />
@@ -376,7 +371,6 @@ const styles = StyleSheet.create({
   flagText: { fontFamily: Fonts.title, fontSize: 7, letterSpacing: 0.8 },
 
   flagPassiva: { borderColor: Colors.tealBright + '80', backgroundColor: Colors.tealBright + '15' },
-  flagToggle:  { borderColor: Colors.gold + '80',       backgroundColor: Colors.gold + '15' },
   flagAction:  { borderColor: Colors.ember + '80',      backgroundColor: Colors.emberDim },
   flagPressao: { borderColor: '#a855f780',              backgroundColor: 'rgba(168,85,247,0.12)' },
   flagMulti:   { borderColor: '#60a5fa80',              backgroundColor: 'rgba(96,165,250,0.12)' },

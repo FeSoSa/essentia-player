@@ -203,7 +203,6 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
                       >
                         <Text style={styles.targetIcon}>{e.icon || '⚔'}</Text>
                         <Text style={styles.targetName} numberOfLines={1}>{e.name}</Text>
-                        <Text style={styles.targetHp}>{e.hpCurrent}/{e.hpMax}</Text>
                       </TouchableOpacity>
                     ))}
                     {bosses.map((b) => {
@@ -228,7 +227,6 @@ export function SkillModal({ visible, slot, skill, onClose }: Props) {
                               ? `${b.name} — ${b.phases[b.currentPhase]!.name}`
                               : b.name} (Boss)
                           </Text>
-                          <Text style={styles.targetHp}>{b.hpCurrent}/{phase?.hpMax ?? '?'}</Text>
                         </TouchableOpacity>
                       );
                     })}

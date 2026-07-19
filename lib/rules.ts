@@ -1,4 +1,4 @@
-import type { Attributes } from '@/types';
+import type { Attributes, AutoEffect } from '@/types';
 
 export function getModifier(val: number): number {
   if (val <= 7) return -1;
@@ -118,4 +118,58 @@ export function getArmorWeight(armorType?: string): ArmorWeight {
   if (t.includes('média') || t.includes('media') || t.includes('medium')) return 'medium';
   if (t.includes('leve') || t.includes('light')) return 'light';
   return 'none';
+}
+
+const ATTR_LABEL: Record<string, string> = {
+  strength: 'Força', agility: 'Agilidade', intelligence: 'Intelecto', resistance: 'Resistência',
+  flow: 'Fluxo', wisdom: 'Sabedoria', presence: 'Presença', defense: 'Defesa',
+};
+
+const COST_LABEL: Record<string, string> = {
+  flow: 'Fluxo', hp: 'HP', ether: 'Éter', charge: 'Carga',
+  percentual_flow: 'Fluxo %', percentual_hp: 'HP %', pressao: 'Pressão',
+};
+
+const AUTO_EFFECT_TYPE_LABEL: Record<string, string> = {
+  damage_hp: 'Dano HP',
+  damage_flow: 'Dano Flow',
+  heal_hp: 'Cura HP',
+  heal_flow: 'Cura Flow',
+  block_skill: 'Bloquear skill',
+  modify_attribute: 'Modificar atributo',
+  modify_damage_dealt: 'Mod. dano causado',
+  modify_damage_received: 'Mod. dano recebido',
+  modify_resource_cost: 'Reduzir custo por recurso',
+};
+
+function signedNum(n: number): string {
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+/** Descrição curta e legível de um AutoEffect, ex: "Força +3" ou "Dano HP 12". */
+export function describeAutoEffect(eff: AutoEffect): string {
+  switch (eff.type) {
+    case 'modify_attribute': {
+      const attr = eff.attribute ? (ATTR_LABEL[eff.attribute] ?? eff.attribute) : '?';
+      const parts: string[] = [];
+      if (eff.value) parts.push(signedNum(eff.value));
+      if (eff.percentual) parts.push(`${signedNum(eff.percentual)}%`);
+      return `${attr} ${parts.join(' ') || '+0'}`;
+    }
+    case 'modify_resource_cost': {
+      const cost = eff.costType ? (COST_LABEL[eff.costType] ?? eff.costType) : '?';
+      return `Custo ${cost} ${signedNum(eff.percentual ?? 0)}%`;
+    }
+    case 'modify_damage_dealt':
+    case 'modify_damage_received': {
+      const parts: string[] = [];
+      if (eff.value) parts.push(signedNum(eff.value));
+      if (eff.percentual) parts.push(`${signedNum(eff.percentual)}%`);
+      return `${AUTO_EFFECT_TYPE_LABEL[eff.type]} ${parts.join(' ') || '+0'}`;
+    }
+    case 'block_skill':
+      return AUTO_EFFECT_TYPE_LABEL[eff.type] ?? eff.type;
+    default:
+      return `${AUTO_EFFECT_TYPE_LABEL[eff.type] ?? eff.type} ${eff.value ?? 0}`;
+  }
 }

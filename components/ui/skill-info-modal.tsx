@@ -3,13 +3,14 @@ import {
   Modal, View, Text, TouchableOpacity, ScrollView,
   ActivityIndicator, StyleSheet, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '@/constants/theme';
 import { NumPad } from '@/components/ui/num-pad';
 import { ConfirmModal } from '@/components/ui/confirm-modal';
 import { usePlayerStore } from '@/store/playerStore';
 import { useGameStore } from '@/store/gameStore';
 import { unlockSkill, chooseMasteryPath, getSkillTree, useSkill, requestDamage, requestMultiDamage, requestEffects, skillMiss } from '@/lib/api';
-import { getModifier, formatMod, resolveAtributeMod } from '@/lib/rules';
+import { getModifier, formatMod, resolveAtributeMod, weaponDamageFormula } from '@/lib/rules';
 import type { SkillTreeEntry, Slot, DamageResult, Attributes } from '@/types';
 
 interface Props {
@@ -60,6 +61,7 @@ const STATUS_LABEL: Record<string, string> = {
 const MAESTRIA_THRESHOLDS = [0, 3, 8, 16, 28];
 
 export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onEquipPress, onRemovePress }: Props) {
+  const insets        = useSafeAreaInsets();
   const player       = usePlayerStore((s) => s.player)!;
   const setPlayer    = usePlayerStore((s) => s.setPlayer);
   const setSkillTree = usePlayerStore((s) => s.setSkillTree);
@@ -139,8 +141,8 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   const hitTotal     = validHit ? hitValue + agiMod + bonusValue + hitBonusTotal : null;
   const diceFormula   = skill ? parseDice(skill.descricao) : null;
   const danoBase      = skill?.danoBase ?? 0;
-  const equilibrio    = skill?.equilibrio ?? null;
-  const modAtributo   = skill?.atributo ? resolveAtributeMod(skill.atributo, player.attributes) : 0;
+  const equilibrio    = skill?.damageSource === 'weapon' ? (skill?.equilibrio ?? 4) : (skill?.equilibrio ?? null);
+  const modAtributo   = skill?.atributo ? resolveAtributeMod(skill.atributo, player.effectiveAttributes ?? player.attributes) : 0;
   const hasCombat    = enemies.length > 0 || bosses.length > 0;
   const isPressaoMode        = !!(skill?.pressaoDice && player.pressao);
   const pressaoPoints        = isPressaoMode ? player.pressao!.current : 0;
@@ -151,21 +153,30 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     ? pressaoCombinedValue + attackBonusTotal
     : diceValue + attackBonusTotal;
   const isWeaponDamage = skill?.damageSource === 'weapon';
-  const isNoDamage     = !skill.danoFormula && !skill.isPassive && !skill.toggle;
+  const isNoDamage     = !skill.danoFormula && !skill.isPassive;
   const validForDamage = isPressaoMode ? validPressao : validDice;
-  const baseDamage = !isWeaponDamage && validForDamage
+  const baseDamage = validForDamage
     ? equilibrio != null
       ? (isCrit ? danoBase * 2 : danoBase) + Math.floor((effectiveDiceValue * modAtributo) / equilibrio)
       : (isCrit ? danoBase * 2 : danoBase)
     : null;
+  // Modificadores da skill sobre o dano da arma equipada (flat/percent/extra_dice) — espelha SkillUseService.kt
+  const weaponModifiedDamage = (() => {
+    if (!isWeaponDamage || baseDamage === null) return baseDamage;
+    let dmg = baseDamage;
+    const mods = skill?.weaponDamageModifiers ?? [];
+    for (const mod of mods) {
+      if (mod.type === 'flat') dmg += mod.value ?? 0;
+    }
+    const pctTotal = mods.filter(m => m.type === 'percent').reduce((s, m) => s + (m.percentual ?? 0) / 100, 0);
+    if (pctTotal !== 0) dmg = Math.round(dmg * (1 + pctTotal));
+    return dmg;
+  })();
   const maestriaBonus = maestria?.bonusDano ?? 0;
-  const damageWithMaestria = baseDamage !== null
-    ? maestriaBonus > 0 ? Math.round(baseDamage * (1 + maestriaBonus)) : baseDamage
+  const damageWithMaestria = weaponModifiedDamage !== null
+    ? maestriaBonus > 0 ? Math.round(weaponModifiedDamage * (1 + maestriaBonus)) : weaponModifiedDamage
     : null;
-  // Dano de arma é calculado inteiramente pelo servidor (SkillUseService) — nunca há preview local.
-  const damagePreview = isWeaponDamage
-    ? null
-    : damageWithMaestria !== null ? damageWithMaestria + damageBonusTotal : null;
+  const damagePreview = damageWithMaestria !== null ? damageWithMaestria + damageBonusTotal : null;
 
   function handleClose() {
     setError(null);
@@ -212,7 +223,8 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     setActionConfirmOpen(true);
   }
 
-  // Chamado ao avançar para o acerto — seta cooldown e obtém custo (sem dice roll)
+  // Chamado ao avançar para o acerto — obtém custo/dano preview (sem dice roll).
+  // Cooldown NÃO é setado aqui — só quando o mestre aprova o dano ou o jogador erra.
   async function handleAdvanceToHit() {
     const isMulti = !!skill?.multiTarget;
     const hasTarget = isMulti ? selectedTargets.length > 0 : !!selectedTarget;
@@ -220,7 +232,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
     setUseLoading(true);
     setError(null);
     try {
-      const res = await useSkill(player.id, activeSlot.id, {});
+      const res = await useSkill(player.id, activeSlot.id, { commit: false });
       setUseResult(res);
       setUsageStarted(true);
       setUseStep('hit');
@@ -230,24 +242,6 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
         ?? err?.message
         ?? 'Erro ao usar habilidade.';
       setError(typeof msg === 'string' ? msg : 'Erro ao usar habilidade.');
-    } finally {
-      setUseLoading(false);
-    }
-  }
-
-  // Toggle: ativa ou desativa via mesma rota useSkill
-  async function handleToggle() {
-    if (!activeSlot || !player.id) return;
-    setUseLoading(true);
-    setError(null);
-    try {
-      await useSkill(player.id, activeSlot.id, {});
-      handleClose();
-    } catch (err: any) {
-      const data = err?.response?.data;
-      const msg = (typeof data === 'string' ? data : data?.message ?? data?.detail ?? data?.error)
-        ?? err?.message ?? 'Erro ao alternar habilidade.';
-      setError(typeof msg === 'string' ? msg : 'Erro ao alternar habilidade.');
     } finally {
       setUseLoading(false);
     }
@@ -300,7 +294,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
         return acc;
       }, {} as Record<string, number>);
       try {
-        const updated = await skillMiss(player.id, costs);
+        const updated = await skillMiss(player.id, costs, activeSlot?.id);
         setPlayer(updated);
       } catch { /* silent — custo pode não debitar se não tiver recursos */ }
     }
@@ -362,6 +356,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           damage: finalDamage,
           costs,
           skillId: skill.skillId,
+          slotId: activeSlot?.id,
         });
         if (skill.onHitEffects && skill.onHitEffects.length > 0) {
           await requestEffects(player.id, {
@@ -419,7 +414,10 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
   return (<>
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
+        <View style={[
+          styles.card,
+          { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20), paddingLeft: Math.max(insets.left, 20), paddingRight: Math.max(insets.right, 20) },
+        ]}>
 
           {/* Header */}
           <View style={styles.header}>
@@ -440,7 +438,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 ) : null}
               </View>
             </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtnBox} activeOpacity={0.7}>
               <Text style={styles.closeBtn}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -458,17 +456,6 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           {activeSlot && skill.isPassive && (
             <View style={styles.passivaMsgBlock}>
               <Text style={styles.passivaMsgText}>Habilidade passiva — bônus aplicado automaticamente enquanto equipada.</Text>
-            </View>
-          )}
-
-          {/* ── Toggle (modo de uso) ── */}
-          {activeSlot && skill.toggle && (
-            <View style={styles.passivaMsgBlock}>
-              <Text style={styles.passivaMsgText}>
-                {activeSlot.toggleActive
-                  ? '⚡ Ativa — efeito sendo aplicado. Toque em DESATIVAR para encerrar.'
-                  : 'Inativa — toque em ATIVAR para ligar o efeito.'}
-              </Text>
             </View>
           )}
 
@@ -674,7 +661,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
           )}
 
           {/* ── Steps de uso ── */}
-          {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && !isNoDamage && (
+          {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !isNoDamage && (
             <ScrollView style={styles.stepsScroll} contentContainerStyle={styles.stepsContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
               {/* PASSO 1 — ALVO */}
@@ -682,8 +669,8 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                 const isMulti = !!skill?.multiTarget;
                 const maxT = skill?.multiTarget?.maxTargets ?? 1;
                 const allTargets = [
-                  ...enemies.map(e => ({ id: e.instanceId, kind: 'enemy' as TargetKind, icon: e.icon || '⚔', name: e.name, hp: `${e.hpCurrent}/${e.hpMax}` })),
-                  ...bosses.map(b => ({ id: b.instanceId, kind: 'boss' as TargetKind, icon: '★', name: b.currentPhase > 0 && b.phases[b.currentPhase]?.name ? `${b.name} — ${b.phases[b.currentPhase]!.name}` : b.name, hp: `${b.hpCurrent}/${b.phases[b.currentPhase]?.hpMax ?? '?'}` })),
+                  ...enemies.map(e => ({ id: e.instanceId, kind: 'enemy' as TargetKind, icon: e.icon || '⚔', name: e.name })),
+                  ...bosses.map(b => ({ id: b.instanceId, kind: 'boss' as TargetKind, icon: '★', name: b.currentPhase > 0 && b.phases[b.currentPhase]?.name ? `${b.name} — ${b.phases[b.currentPhase]!.name}` : b.name })),
                 ];
                 return (
                   <View style={styles.stepInline}>
@@ -717,13 +704,13 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                             >
                               <Text style={styles.targetIcon}>{t.icon}</Text>
                               <Text style={styles.targetName} numberOfLines={1}>{t.name}</Text>
-                              <Text style={styles.targetHp}>{t.hp}</Text>
                             </TouchableOpacity>
                           );
                         })}
                       </View>
-                      <TouchableOpacity onPress={() => setUseStep('damage')} activeOpacity={0.7}>
-                        <Text style={styles.skipLink}>Sem alvo →</Text>
+                      <TouchableOpacity onPress={() => setUseStep('damage')} style={styles.skipBtn} activeOpacity={0.7}>
+                        <Text style={styles.skipBtnText}>SEM ALVO</Text>
+                        <Text style={styles.skipBtnArrow}>→</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -738,7 +725,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                     onChange={hitPadMode === 'd20' ? setHitInput : setBonusInput}
                     maxLength={hitPadMode === 'd20' ? 2 : 3}
                   />
-                  <View style={styles.stepSide}>
+                  <View style={styles.stepMid}>
                     <Text style={styles.stepBig}>{hitInput || '—'}</Text>
                     <Text style={styles.stepSub}>
                       1d20 + AGI {formatMod(agiMod)}{bonusValue !== 0 ? `  bônus ${formatMod(bonusValue)}` : ''}
@@ -769,12 +756,13 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                         />
                       )}
                     </View>
-                    {hitTotal !== null && (
-                      <Text style={[styles.stepBig, { fontSize: 32, color: Colors.tealBright }]}>{hitTotal}</Text>
-                    )}
                     {hitValue >= (skill.critThreshold ?? 20) && (
                       <Text style={styles.critBadge}>CRÍTICO!</Text>
                     )}
+                  </View>
+                  <View style={styles.stepFinal}>
+                    <Text style={styles.stepFinalLabel}>TOTAL</Text>
+                    <Text style={styles.stepFinalValue}>{hitTotal ?? '—'}</Text>
                   </View>
                 </View>
               )}
@@ -782,17 +770,21 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               {/* PASSO 3 — DANO */}
               {((hasCombat && useStep === 'damage') || (!hasCombat && useStep === 'target')) && (
                 <View style={styles.stepCol}>
-                  {/* Linha superior: numpad + info */}
+                  {/* Linha superior: numpad + info + valor final */}
                   <View style={styles.stepInline}>
-                    {skill.danoFormula && !isWeaponDamage && !(hasCombat && isPressaoMode) ? (
+                    {skill.danoFormula && !(hasCombat && isPressaoMode) ? (
                       <NumPad
                         value={diceInput}
                         onChange={setDiceInput}
                         maxLength={3}
                       />
                     ) : null}
-                    <View style={styles.stepSide}>
-                      {(skill?.danoFormula || diceFormula) && (
+                    <View style={styles.stepMid}>
+                      {isWeaponDamage ? (
+                        equilibrio != null && (
+                          <Text style={styles.formulaHint}>⚔ {weaponDamageFormula({ damageBase: danoBase, damageAttribute: skill.atributo, equilibrio })}</Text>
+                        )
+                      ) : (skill?.danoFormula || diceFormula) && (
                         <Text style={styles.formulaHint}>⚔ {skill?.danoFormula ?? diceFormula}</Text>
                       )}
                       {isCrit && (
@@ -801,25 +793,14 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                       {skill.custo && skill.custo !== '—' && (
                         <Text style={styles.stepSub}>CUSTO  {skill.custo}</Text>
                       )}
-                      {isWeaponDamage ? (
-                        <Text style={[styles.stepSub, { marginTop: 4 }]}>Dano calculado pelo mestre ao confirmar</Text>
-                      ) : skill.danoFormula ? (
+                      {skill.danoFormula ? (
                         <>
                           <Text style={styles.stepBig}>{diceInput || '—'}</Text>
-
-                          {/* Sem pressão: mostra intermediário + maestria */}
-                          {(!skill.pressaoDice || !player.pressao) && damageWithMaestria !== null && (
-                            <>
-                              <Text style={[styles.stepBig, { fontSize: 32, color: Colors.ember }]}>
-                                {damageWithMaestria}
-                              </Text>
-                              {maestriaBonus > 0 && (
-                                <Text style={styles.stepSub}>+{Math.round(maestriaBonus * 100)}% maestria</Text>
-                              )}
-                            </>
+                          {maestriaBonus > 0 && (!skill.pressaoDice || !player.pressao) && (
+                            <Text style={styles.stepSub}>+{Math.round(maestriaBonus * 100)}% maestria</Text>
                           )}
 
-                          {/* Com pressão: exibe combinação d20 + pontos e total */}
+                          {/* Com pressão: exibe combinação d20 + pontos */}
                           {skill.pressaoDice && player.pressao && (
                             <View style={styles.pressaoBlock}>
                               <View style={styles.pressaoHeaderRow}>
@@ -834,14 +815,6 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                                         : `${pressaoPoints} pts de Pressão`)}
                                 </Text>
                               </View>
-                              {damagePreview !== null && (
-                                <View style={styles.pressaoTotalRow}>
-                                  <Text style={styles.pressaoTotalLabel}>TOTAL</Text>
-                                  <Text style={[styles.stepBig, { fontSize: 32, color: '#a855f7' }]}>
-                                    {damagePreview}
-                                  </Text>
-                                </View>
-                              )}
                             </View>
                           )}
                         </>
@@ -849,6 +822,16 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
                         <Text style={[styles.stepSub, { marginTop: 4 }]}>Sem dado de dano</Text>
                       )}
                     </View>
+                    {skill.danoFormula && (
+                      <View style={styles.stepFinal}>
+                        <Text style={[styles.stepFinalLabel, { color: skill.pressaoDice && player.pressao ? '#a855f7' : Colors.ember }]}>
+                          {skill.pressaoDice && player.pressao ? 'TOTAL' : 'DANO'}
+                        </Text>
+                        <Text style={[styles.stepFinalValue, { color: skill.pressaoDice && player.pressao ? '#a855f7' : Colors.ember }]}>
+                          {(skill.pressaoDice && player.pressao ? damagePreview : damageWithMaestria) ?? '—'}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 </View>
               )}
@@ -949,21 +932,6 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
               </TouchableOpacity>
             )}
 
-            {/* Toggle: ativar / desativar */}
-            {activeSlot && skill.toggle && (
-              <TouchableOpacity
-                style={[styles.actionBtn, activeSlot.toggleActive ? { backgroundColor: Colors.danger } : { backgroundColor: '#16a34a' }, useLoading && styles.btnDisabled]}
-                onPress={activeSlot?.toggleActive ? handleToggle : () => withActionConfirm(handleToggle)}
-                disabled={useLoading}
-                activeOpacity={0.7}
-              >
-                {useLoading
-                  ? <ActivityIndicator size="small" color={Colors.text} />
-                  : <Text style={styles.actionBtnText}>{activeSlot.toggleActive ? 'DESATIVAR' : 'ATIVAR'}</Text>
-                }
-              </TouchableOpacity>
-            )}
-
             {/* Sem dano: usar direto */}
             {activeSlot && isNoDamage && cooldown === 0 && (
               <TouchableOpacity
@@ -980,7 +948,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             )}
 
             {/* Passo 1: alvo → acerto (chama useSkill ao avançar) */}
-            {activeSlot && (cooldown === 0 || usageStarted) && !useResult && !skill.isPassive && !skill.toggle && hasCombat && useStep === 'target' && (() => {
+            {activeSlot && (cooldown === 0 || usageStarted) && !useResult && !skill.isPassive && hasCombat && useStep === 'target' && (() => {
               const isMulti = !!skill?.multiTarget;
               const noTarget = isMulti ? selectedTargets.length === 0 : !selectedTarget;
               return (
@@ -999,7 +967,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             })()}
 
             {/* Passo 2: hit → errou debita custo, acertou vai para dano */}
-            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && hasCombat && useStep === 'hit' && (
+            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && hasCombat && useStep === 'hit' && (
               <>
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: Colors.danger }]}
@@ -1024,7 +992,7 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
             )}
 
             {/* Passo 3: dano → solicitar dano ou usar sem combate */}
-            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && !skill.toggle && useStep === 'damage' && (
+            {activeSlot && (cooldown === 0 || usageStarted) && !skill.isPassive && useStep === 'damage' && (
               hasCombat && (selectedTarget || selectedTargets.length > 0) ? (
                 <TouchableOpacity
                   style={[styles.actionBtn, styles.actionBtnUse, applyingDmg && styles.btnDisabled]}
@@ -1078,51 +1046,57 @@ export function SkillInfoModal({ visible, skill, slots, activeSlot, onClose, onE
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.78)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  overlay: { flex: 1, backgroundColor: Colors.card },
   card: {
-    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 4, padding: 16, width: 420, maxWidth: '100%', maxHeight: '92%', gap: 10,
-    overflow: 'hidden',
+    flex: 1,
+    backgroundColor: Colors.card,
+    gap: 10,
   },
 
   header:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
-  headerLeft: { flex: 1, gap: 4 },
-  nome:       { fontFamily: Fonts.title, fontSize: 18, color: Colors.text, letterSpacing: 1 },
-  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  custo:      { fontFamily: Fonts.title, fontSize: 11, color: Colors.tealBright, letterSpacing: 1 },
-  statusLabel: { fontFamily: Fonts.title, fontSize: 9, letterSpacing: 2 },
-  categoria:  { fontFamily: Fonts.body, fontSize: 11, color: Colors.muted },
-  closeBtn:   { fontSize: 16, color: Colors.muted },
+  headerLeft: { flex: 1, gap: 6 },
+  nome:       { fontFamily: Fonts.title, fontSize: 26, color: Colors.text, letterSpacing: 1 },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  custo:      { fontFamily: Fonts.title, fontSize: 13, color: Colors.tealBright, letterSpacing: 1 },
+  statusLabel: { fontFamily: Fonts.title, fontSize: 11, letterSpacing: 2 },
+  categoria:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted },
+  closeBtnBox: {
+    width: 44, height: 44,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 6,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+  closeBtn:   { fontSize: 20, color: Colors.text },
 
   divider: { height: 1, backgroundColor: Colors.border },
-  scroll:  { maxHeight: 340, flexShrink: 1 },
+  scroll:  { flex: 1 },
 
-  descricao: { fontFamily: Fonts.body, fontSize: 14, color: Colors.text, lineHeight: 20, marginBottom: 14 },
+  descricao: { fontFamily: Fonts.body, fontSize: 16, color: Colors.text, lineHeight: 23, marginBottom: 14 },
 
-  blockLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 6 },
+  blockLabel: { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 2, marginBottom: 8 },
 
   detailsBlock: {
-    backgroundColor: Colors.surface, borderRadius: 4, padding: 10,
-    gap: 6, marginBottom: 14,
+    backgroundColor: Colors.surface, borderRadius: 4, padding: 14,
+    gap: 8, marginBottom: 14,
   },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  detailLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 1.5 },
-  detailValue: { fontFamily: Fonts.body, fontSize: 13, color: Colors.text },
+  detailLabel: { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 1.5 },
+  detailValue: { fontFamily: Fonts.body, fontSize: 15, color: Colors.text },
 
   reqBlock: { borderLeftWidth: 2, borderLeftColor: Colors.danger, paddingLeft: 10, marginBottom: 14 },
-  reqText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.danger },
+  reqText:  { fontFamily: Fonts.body, fontSize: 15, color: Colors.danger },
 
-  cooldownText: { fontFamily: Fonts.body, fontSize: 13, color: Colors.danger, fontStyle: 'italic', marginBottom: 10 },
+  cooldownText: { fontFamily: Fonts.body, fontSize: 15, color: Colors.danger, fontStyle: 'italic', marginBottom: 10 },
 
-  maestriaBlock:  { borderWidth: 1, borderColor: Colors.gold, borderRadius: 3, padding: 12, gap: 10 },
+  maestriaBlock:  { borderWidth: 1, borderColor: Colors.gold, borderRadius: 4, padding: 16, gap: 12 },
   maestriaHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  maestriaLevel:  { fontFamily: Fonts.title, fontSize: 11, color: Colors.gold, letterSpacing: 1 },
-  maestriaMaxText:{ fontFamily: Fonts.body, fontSize: 12, color: Colors.gold, fontStyle: 'italic' },
+  maestriaLevel:  { fontFamily: Fonts.title, fontSize: 13, color: Colors.gold, letterSpacing: 1 },
+  maestriaMaxText:{ fontFamily: Fonts.body, fontSize: 14, color: Colors.gold, fontStyle: 'italic' },
 
   progressRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  progressTrack:{ flex: 1, height: 4, backgroundColor: Colors.surface, borderRadius: 2, overflow: 'hidden' },
-  progressFill: { height: '100%' as any, backgroundColor: Colors.gold, borderRadius: 2 },
-  progressText: { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, minWidth: 40, textAlign: 'right' },
+  progressTrack:{ flex: 1, height: 6, backgroundColor: Colors.surface, borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: '100%' as any, backgroundColor: Colors.gold, borderRadius: 3 },
+  progressText: { fontFamily: Fonts.title, fontSize: 12, color: Colors.muted, minWidth: 44, textAlign: 'right' },
 
   choicesMade: { gap: 4 },
   choiceChip:  { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1146,14 +1120,14 @@ const styles = StyleSheet.create({
 
   errorText: { fontFamily: Fonts.body, fontSize: 13, color: Colors.danger },
 
-  actions:   { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 2 },
-  cancelText:{ fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 2 },
-  actionBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 2, minWidth: 130, alignItems: 'center' },
+  actions:   { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  cancelBtn: { paddingHorizontal: 20, paddingVertical: 14, borderWidth: 1, borderColor: Colors.border, borderRadius: 4 },
+  cancelText:{ fontFamily: Fonts.title, fontSize: 12, color: Colors.muted, letterSpacing: 2 },
+  actionBtn: { paddingHorizontal: 26, paddingVertical: 14, borderRadius: 4, minWidth: 160, alignItems: 'center' },
   actionBtnUnlock:  { backgroundColor: Colors.gold },
   actionBtnEquip:   { backgroundColor: Colors.ember },
   actionBtnRemove:  { backgroundColor: 'transparent', borderWidth: 1, borderColor: Colors.danger },
-  actionBtnText:    { fontFamily: Fonts.title, fontSize: 10, color: Colors.bg, letterSpacing: 2 },
+  actionBtnText:    { fontFamily: Fonts.title, fontSize: 12, color: Colors.bg, letterSpacing: 2 },
   btnDisabled: { opacity: 0.6 },
 
   passivaBadge:    { fontFamily: Fonts.title, fontSize: 8, color: Colors.tealBright, letterSpacing: 2, borderWidth: 1, borderColor: Colors.tealBright, borderRadius: 2, paddingHorizontal: 5, paddingVertical: 1 },
@@ -1161,53 +1135,53 @@ const styles = StyleSheet.create({
   passivaMsgText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic' },
 
   useSection:   { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12, marginTop: 8, gap: 10 },
-  formulaHint:  { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 1 },
+  formulaHint:  { fontFamily: Fonts.title, fontSize: 13, color: Colors.muted, letterSpacing: 1 },
 
   custoRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  custoLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
-  custoValue: { fontFamily: Fonts.title, fontSize: 14, color: Colors.tealBright, letterSpacing: 1 },
+  custoLabel: { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 2 },
+  custoValue: { fontFamily: Fonts.title, fontSize: 17, color: Colors.tealBright, letterSpacing: 1 },
 
-  diceBlock:      { flexDirection: 'row', alignItems: 'flex-end', gap: 16 },
+  diceBlock:      { flexDirection: 'row', alignItems: 'flex-end', gap: 20 },
   diceInputWrap:  { alignItems: 'center', gap: 4 },
   diceModWrap:    { alignItems: 'center', gap: 4 },
   diceResultWrap: { alignItems: 'center', gap: 4, flex: 1 },
-  diceLabel:      { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 2 },
+  diceLabel:      { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 2 },
   diceInput: {
-    width: 64, height: 52, borderWidth: 1, borderColor: Colors.ember,
-    borderRadius: 3, backgroundColor: Colors.surface,
-    fontFamily: Fonts.title, fontSize: 26, color: Colors.ember, textAlign: 'center',
+    width: 80, height: 64, borderWidth: 1, borderColor: Colors.ember,
+    borderRadius: 4, backgroundColor: Colors.surface,
+    fontFamily: Fonts.title, fontSize: 32, color: Colors.ember, textAlign: 'center',
   },
-  diceModValue:   { fontFamily: Fonts.title, fontSize: 22, color: Colors.muted },
-  diceResult:     { fontFamily: Fonts.title, fontSize: 36, color: Colors.tealBright },
+  diceModValue:   { fontFamily: Fonts.title, fontSize: 26, color: Colors.muted },
+  diceResult:     { fontFamily: Fonts.title, fontSize: 44, color: Colors.tealBright },
   diceRow:      { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  modText:     { fontFamily: Fonts.title, fontSize: 13, color: Colors.muted },
-  previewText: { fontFamily: Fonts.title, fontSize: 20, color: Colors.tealBright },
+  modText:     { fontFamily: Fonts.title, fontSize: 15, color: Colors.muted },
+  previewText: { fontFamily: Fonts.title, fontSize: 24, color: Colors.tealBright },
 
   waitingBlock: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
-  waitingText:  { fontFamily: Fonts.body, fontSize: 13, color: Colors.muted, fontStyle: 'italic' },
+  waitingText:  { fontFamily: Fonts.body, fontSize: 15, color: Colors.muted, fontStyle: 'italic' },
   numPadRow:    { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
   numPadResult: { flex: 1, gap: 4, justifyContent: 'flex-start' },
-  stepsScroll: { flexShrink: 1, maxHeight: 280 },
-  stepsContainer: { gap: 8 },
-  stepCol:      { gap: 8 },
-  bonusRow:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  bonusLabel:   { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
+  stepsScroll: { flex: 1, width: '100%' },
+  stepsContainer: { gap: 10, width: '100%' },
+  stepCol:      { gap: 10 },
+  bonusRow:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bonusLabel:   { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 2 },
   bonusField:   {
-    width: 52, height: 30, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 3, backgroundColor: Colors.surface,
-    fontFamily: Fonts.title, fontSize: 15, color: Colors.text, textAlign: 'center',
+    width: 68, height: 40, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 4, backgroundColor: Colors.surface,
+    fontFamily: Fonts.title, fontSize: 19, color: Colors.text, textAlign: 'center',
     paddingVertical: 0,
   },
   bonusFieldDisplay: {
-    lineHeight: 30, borderColor: Colors.ember,
+    lineHeight: 40, borderColor: Colors.ember,
   },
   padModeBtn: {
-    paddingHorizontal: 6, paddingVertical: 3,
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 3,
+    paddingHorizontal: 9, paddingVertical: 5,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 4,
     backgroundColor: Colors.surface,
   },
   padModeBtnActive: { borderColor: Colors.ember, backgroundColor: 'rgba(251,146,60,0.12)' },
-  padModeBtnText:   { fontFamily: Fonts.title, fontSize: 8, color: Colors.muted, letterSpacing: 1 },
+  padModeBtnText:   { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted, letterSpacing: 1 },
   padModeBtnTextActive: { color: Colors.ember },
 
   // Pressão redesign
@@ -1238,19 +1212,36 @@ const styles = StyleSheet.create({
   pressaoValueFieldActive: { borderColor: '#a855f7', lineHeight: 36 },
   pressaoTotalRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
   pressaoTotalLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2 },
-  stepInline:   { flexDirection: 'row', gap: 16, alignItems: 'flex-start' },
-  stepSide:     { flex: 1, gap: 4, justifyContent: 'center' },
-  stepBig:      { fontFamily: Fonts.title, fontSize: 24, color: Colors.text },
-  stepSub:      { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted },
-  stepResult:   { alignItems: 'center', gap: 6, paddingVertical: 8 },
-  targetRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  targetBtnCompact: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 10, paddingVertical: 6,
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 3,
+  stepInline:   { flexDirection: 'row', gap: 20, alignItems: 'stretch', width: '100%' },
+  stepMid:      {
+    flex: 1, gap: 6, justifyContent: 'flex-start',
+    paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: Colors.border,
   },
-  stepLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 4 },
-  skipLink:  { fontFamily: Fonts.body, fontSize: 12, color: Colors.muted, textDecorationLine: 'underline', marginTop: 6, alignSelf: 'flex-end' },
+  stepFinal:    {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingLeft: 16, borderLeftWidth: 1, borderLeftColor: Colors.border,
+  },
+  stepFinalLabel: { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 2 },
+  stepFinalValue: { fontFamily: Fonts.title, fontSize: 72, color: Colors.tealBright, lineHeight: 80 },
+  stepBig:      { fontFamily: Fonts.title, fontSize: 40, color: Colors.text },
+  stepSub:      { fontFamily: Fonts.body, fontSize: 14, color: Colors.muted },
+  stepResult:   { alignItems: 'center', gap: 6, paddingVertical: 8 },
+  targetRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  targetBtnCompact: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 14, paddingVertical: 10,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 4,
+  },
+  stepLabel: { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 2, marginBottom: 4 },
+  skipBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-end', marginTop: 10,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 4,
+    backgroundColor: Colors.surface,
+  },
+  skipBtnText: { fontFamily: Fonts.title, fontSize: 11, color: Colors.muted, letterSpacing: 1.5 },
+  skipBtnArrow: { fontFamily: Fonts.title, fontSize: 13, color: Colors.muted },
   entityHpDot: { backgroundColor: Colors.tealBright },
   targetList: { gap: 4, marginTop: 8 },
   targetListLabel: { fontFamily: Fonts.title, fontSize: 9, color: Colors.muted, letterSpacing: 2, marginBottom: 2 },
@@ -1271,8 +1262,8 @@ const styles = StyleSheet.create({
   multiTargetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   multiTargetRowName: { flex: 1, fontFamily: Fonts.body, fontSize: 12, color: Colors.muted },
   multiTargetRowDmg: { fontFamily: Fonts.title, fontSize: 16, color: Colors.ember },
-  targetIcon:  { fontSize: 11, width: 14, textAlign: 'center' as const },
-  targetName:  { flex: 1, fontFamily: Fonts.body, fontSize: 12, color: Colors.text },
+  targetIcon:  { fontSize: 15, width: 18, textAlign: 'center' as const },
+  targetName:  { fontFamily: Fonts.body, fontSize: 14, color: Colors.text },
   targetHp:    { fontFamily: Fonts.title, fontSize: 10, color: Colors.muted },
 
   resultBlock:  { alignItems: 'center', gap: 6, paddingVertical: 8 },
@@ -1286,6 +1277,6 @@ const styles = StyleSheet.create({
   applyBtnText: { fontFamily: Fonts.title, fontSize: 10, color: '#fff', letterSpacing: 2 },
 
   actionBtnUse: { backgroundColor: Colors.ember },
-  critBadge: { fontFamily: Fonts.title, fontSize: 11, color: Colors.gold, letterSpacing: 2 },
-  critHint:  { fontFamily: Fonts.title, fontSize: 10, color: Colors.gold, letterSpacing: 1 },
+  critBadge: { fontFamily: Fonts.title, fontSize: 14, color: Colors.gold, letterSpacing: 2 },
+  critHint:  { fontFamily: Fonts.title, fontSize: 12, color: Colors.gold, letterSpacing: 1 },
 });

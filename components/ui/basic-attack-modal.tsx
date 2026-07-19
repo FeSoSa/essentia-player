@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, StyleSheet, ActivityIndicator,
+  Modal, View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Fonts } from '@/constants/theme';
 import { NumPad } from '@/components/ui/num-pad';
 import { usePlayerStore } from '@/store/playerStore';
@@ -18,6 +19,7 @@ interface Props {
 type Step = 'target' | 'hit' | 'damage' | 'result';
 
 export function BasicAttackModal({ visible, onClose }: Props) {
+  const insets  = useSafeAreaInsets();
   const player  = usePlayerStore((s) => s.player)!;
   const enemies = useGameStore((s) => s.enemies);
   const bosses  = useGameStore((s) => s.bosses);
@@ -111,7 +113,10 @@ export function BasicAttackModal({ visible, onClose }: Props) {
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={handleClose}>
       <View style={styles.overlay}>
-        <View style={styles.card}>
+        <View style={[
+          styles.card,
+          { paddingTop: Math.max(insets.top, 20), paddingBottom: Math.max(insets.bottom, 20), paddingLeft: Math.max(insets.left, 20), paddingRight: Math.max(insets.right, 20) },
+        ]}>
 
           {/* Header */}
           <View style={styles.header}>
@@ -119,7 +124,7 @@ export function BasicAttackModal({ visible, onClose }: Props) {
               <Text style={styles.title}>ATAQUE BÁSICO</Text>
               <Text style={styles.subtitle}>{attackLabel} · {damageFormula}</Text>
             </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeBtnBox} activeOpacity={0.7}>
               <Text style={styles.closeBtn}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -128,132 +133,142 @@ export function BasicAttackModal({ visible, onClose }: Props) {
 
           {/* STEP: target */}
           {step === 'target' && (
-            <View style={styles.stepBlock}>
-              <Text style={styles.stepLabel}>SELECIONAR ALVO</Text>
-              {enemies.length === 0 && bosses.length === 0 && (
-                <Text style={styles.emptyText}>Nenhum inimigo em campo.</Text>
-              )}
-              {enemies.map((e: EnemyInstance) => (
-                <TouchableOpacity
-                  key={e.instanceId}
-                  style={[styles.targetBtn, selectedTarget?.id === e.instanceId && styles.targetBtnSelected]}
-                  onPress={() => setSelectedTarget(selectedTarget?.id === e.instanceId ? null : { id: e.instanceId, type: 'enemy', name: e.name })}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.targetIcon}>{e.icon || '⚔'}</Text>
-                  <Text style={styles.targetName}>{e.name}</Text>
-                </TouchableOpacity>
-              ))}
-              {bosses.map((b: BossInstance) => (
-                <TouchableOpacity
-                  key={b.instanceId}
-                  style={[styles.targetBtn, selectedTarget?.id === b.instanceId && styles.targetBtnSelected]}
-                  onPress={() => setSelectedTarget(selectedTarget?.id === b.instanceId ? null : { id: b.instanceId, type: 'boss', name: b.name })}
-                  activeOpacity={0.75}
-                >
-                  <Text style={styles.targetIcon}>{b.icon || '★'}</Text>
-                  <Text style={styles.targetName}>{b.name}</Text>
-                </TouchableOpacity>
-              ))}
-              <View style={styles.actions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} activeOpacity={0.7}>
-                  <Text style={styles.cancelText}>CANCELAR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, !selectedTarget && styles.actionBtnDisabled]}
-                  onPress={() => selectedTarget && setStep('hit')}
-                  disabled={!selectedTarget}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.actionBtnText}>AVANÇAR</Text>
-                </TouchableOpacity>
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.stepBlock}>
+                <Text style={styles.stepLabel}>SELECIONAR ALVO</Text>
+                {enemies.length === 0 && bosses.length === 0 && (
+                  <Text style={styles.emptyText}>Nenhum inimigo em campo.</Text>
+                )}
+                {enemies.map((e: EnemyInstance) => (
+                  <TouchableOpacity
+                    key={e.instanceId}
+                    style={[styles.targetBtn, selectedTarget?.id === e.instanceId && styles.targetBtnSelected]}
+                    onPress={() => setSelectedTarget(selectedTarget?.id === e.instanceId ? null : { id: e.instanceId, type: 'enemy', name: e.name })}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.targetIcon}>{e.icon || '⚔'}</Text>
+                    <Text style={styles.targetName}>{e.name}</Text>
+                  </TouchableOpacity>
+                ))}
+                {bosses.map((b: BossInstance) => (
+                  <TouchableOpacity
+                    key={b.instanceId}
+                    style={[styles.targetBtn, selectedTarget?.id === b.instanceId && styles.targetBtnSelected]}
+                    onPress={() => setSelectedTarget(selectedTarget?.id === b.instanceId ? null : { id: b.instanceId, type: 'boss', name: b.name })}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.targetIcon}>{b.icon || '★'}</Text>
+                    <Text style={styles.targetName}>{b.name}</Text>
+                  </TouchableOpacity>
+                ))}
+                <View style={styles.actions}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={handleClose} activeOpacity={0.7}>
+                    <Text style={styles.cancelText}>CANCELAR</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, !selectedTarget && styles.actionBtnDisabled]}
+                    onPress={() => selectedTarget && setStep('hit')}
+                    disabled={!selectedTarget}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.actionBtnText}>AVANÇAR</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            </ScrollView>
           )}
 
           {/* STEP: hit */}
           {step === 'hit' && (
-            <View style={styles.stepBlock}>
-              <Text style={styles.stepLabel}>ROLAR ACERTO</Text>
-              <Text style={styles.hintText}>
-                d20 {agiMod >= 0 ? `+${agiMod}` : agiMod} (AGI){hitBonusTotal !== 0 ? ` +${hitBonusTotal} (efeito)` : ''} vs DEF do alvo
-              </Text>
-              <View style={styles.numpadRow}>
-                <NumPad value={hitInput} onChange={setHitInput} />
-                <View style={styles.numpadInfo}>
-                  {hitTotal !== null && (
-                    <>
-                      <Text style={styles.rollLabel}>TOTAL</Text>
-                      <Text style={styles.rollValue}>{hitTotal}</Text>
-                      <Text style={styles.rollBreak}>
-                        {hitRoll} {agiMod >= 0 ? `+${agiMod}` : agiMod}{hitBonusTotal !== 0 ? ` +${hitBonusTotal}` : ''}
-                      </Text>
-                      {hitRoll >= (weapon?.critThreshold ?? 20) && (
-                        <Text style={styles.critBadge}>CRÍTICO!</Text>
-                      )}
-                    </>
-                  )}
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.stepBlock}>
+                <Text style={styles.stepLabel}>ROLAR ACERTO</Text>
+                <Text style={styles.hintText}>
+                  d20 {agiMod >= 0 ? `+${agiMod}` : agiMod} (AGI){hitBonusTotal !== 0 ? ` +${hitBonusTotal} (efeito)` : ''} vs DEF do alvo
+                </Text>
+                <View style={styles.numpadRow}>
+                  <NumPad value={hitInput} onChange={setHitInput} compact />
+                  <View style={styles.numpadInfo}>
+                    {hitTotal !== null ? (
+                      <>
+                        <Text style={styles.rollLabel}>TOTAL</Text>
+                        <Text style={styles.rollValue}>{hitTotal}</Text>
+                        <Text style={styles.rollBreak}>
+                          {hitRoll} {agiMod >= 0 ? `+${agiMod}` : agiMod}{hitBonusTotal !== 0 ? ` +${hitBonusTotal}` : ''}
+                        </Text>
+                        {hitRoll >= (weapon?.critThreshold ?? 20) && (
+                          <Text style={styles.critBadge}>CRÍTICO!</Text>
+                        )}
+                      </>
+                    ) : (
+                      <Text style={styles.rollPlaceholder}>Role o d20</Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setStep('target')} activeOpacity={0.7}>
+                    <Text style={styles.cancelText}>VOLTAR</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, !validHit && styles.actionBtnDisabled]}
+                    onPress={() => {
+                      if (!validHit) return;
+                      setIsCrit(hitRoll >= (weapon?.critThreshold ?? 20));
+                      setStep('damage');
+                    }}
+                    disabled={!validHit}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.actionBtnText}>ACERTOU →</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
-              <View style={styles.actions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setStep('target')} activeOpacity={0.7}>
-                  <Text style={styles.cancelText}>VOLTAR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, !validHit && styles.actionBtnDisabled]}
-                  onPress={() => {
-                    if (!validHit) return;
-                    setIsCrit(hitRoll >= (weapon?.critThreshold ?? 20));
-                    setStep('damage');
-                  }}
-                  disabled={!validHit}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.actionBtnText}>ACERTOU →</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            </ScrollView>
           )}
 
           {/* STEP: damage */}
           {step === 'damage' && (
-            <View style={styles.stepBlock}>
-              <Text style={styles.stepLabel}>ROLAR DANO</Text>
-              <Text style={styles.hintText}>{damageFormula}</Text>
-              {isCrit && <Text style={styles.critHint}>⚡ Crítico — dado dobrado</Text>}
-              <View style={styles.numpadRow}>
-                <NumPad value={dmgInput} onChange={setDmgInput} />
-                <View style={styles.numpadInfo}>
-                  {dmgTotal !== null && (
-                    <>
-                      <Text style={styles.rollLabel}>DANO</Text>
-                      <Text style={[styles.rollValue, { color: Colors.danger }]}>{dmgTotal}</Text>
-                      {attrMod > 0 && (
-                        <Text style={styles.rollBreak}>
-                          {isCrit ? `${dmgBase}×2 + ${dmgRoll}×${attrMod}/${equil}` : `${dmgBase} + ${dmgRoll}×${attrMod}/${equil}`}
-                        </Text>
-                      )}
-                    </>
-                  )}
+            <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.stepBlock}>
+                <Text style={styles.stepLabel}>ROLAR DANO</Text>
+                <Text style={styles.hintText}>{damageFormula}</Text>
+                {isCrit && <Text style={styles.critHint}>⚡ Crítico — dado dobrado</Text>}
+                <View style={styles.numpadRow}>
+                  <NumPad value={dmgInput} onChange={setDmgInput} compact />
+                  <View style={styles.numpadInfo}>
+                    {dmgTotal !== null ? (
+                      <>
+                        <Text style={styles.rollLabel}>DANO</Text>
+                        <Text style={[styles.rollValue, { color: Colors.danger }]}>{dmgTotal}</Text>
+                        {attrMod > 0 && (
+                          <Text style={styles.rollBreak}>
+                            {isCrit ? `${dmgBase}×2 + ${dmgRoll}×${attrMod}/${equil}` : `${dmgBase} + ${dmgRoll}×${attrMod}/${equil}`}
+                          </Text>
+                        )}
+                      </>
+                    ) : (
+                      <Text style={styles.rollPlaceholder}>Role o dado de dano</Text>
+                    )}
+                  </View>
+                </View>
+                <View style={styles.actions}>
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setStep('hit')} activeOpacity={0.7}>
+                    <Text style={styles.cancelText}>VOLTAR</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.actionBtn, (!validDmg || sending) && styles.actionBtnDisabled]}
+                    onPress={handleSendDamage}
+                    disabled={!validDmg || sending}
+                    activeOpacity={0.8}
+                  >
+                    {sending
+                      ? <ActivityIndicator color={Colors.bg} size="small" />
+                      : <Text style={styles.actionBtnText}>ENVIAR DANO</Text>
+                    }
+                  </TouchableOpacity>
                 </View>
               </View>
-              <View style={styles.actions}>
-                <TouchableOpacity style={styles.cancelBtn} onPress={() => setStep('hit')} activeOpacity={0.7}>
-                  <Text style={styles.cancelText}>VOLTAR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionBtn, (!validDmg || sending) && styles.actionBtnDisabled]}
-                  onPress={handleSendDamage}
-                  disabled={!validDmg || sending}
-                  activeOpacity={0.8}
-                >
-                  {sending
-                    ? <ActivityIndicator color={Colors.bg} size="small" />
-                    : <Text style={styles.actionBtnText}>ENVIAR DANO</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </View>
+            </ScrollView>
           )}
 
           {/* STEP: result */}
@@ -280,25 +295,25 @@ export function BasicAttackModal({ visible, onClose }: Props) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: Colors.card,
   },
   card: {
+    flex: 1,
     backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.ember,
-    borderRadius: 6,
-    width: 360,
-    maxWidth: '100%',
     gap: 0,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 24,
+    gap: 10,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    padding: 16,
+    paddingVertical: 16,
     gap: 8,
   },
   headerLeft: { flex: 1, gap: 2 },
@@ -313,18 +328,26 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.muted,
   },
+  closeBtnBox: {
+    width: 44,
+    height: 44,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
   closeBtn: {
     fontFamily: Fonts.title,
-    fontSize: 14,
-    color: Colors.muted,
-    paddingTop: 2,
+    fontSize: 20,
+    color: Colors.text,
   },
   divider: {
     height: 1,
     backgroundColor: Colors.border,
   },
   stepBlock: {
-    padding: 16,
     gap: 10,
     alignItems: 'stretch',
   },
@@ -351,51 +374,61 @@ const styles = StyleSheet.create({
   targetBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 5,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
   targetBtnSelected: {
     borderColor: Colors.ember,
     backgroundColor: Colors.emberDim,
   },
-  targetIcon: { fontSize: 16 },
+  targetIcon: { fontSize: 20 },
   targetName: {
     fontFamily: Fonts.bodySemiBold,
-    fontSize: 14,
+    fontSize: 17,
     color: Colors.text,
   },
   numpadRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     gap: 16,
   },
   numpadInfo: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'flex-start',
-    gap: 2,
-    paddingTop: 4,
+    gap: 4,
+    paddingLeft: 14,
+    borderLeftWidth: 1,
+    borderLeftColor: Colors.border,
+    minHeight: 172,
   },
   rollLabel: {
     fontFamily: Fonts.title,
-    fontSize: 9,
+    fontSize: 12,
     color: Colors.muted,
     letterSpacing: 2,
   },
   rollValue: {
     fontFamily: Fonts.title,
-    fontSize: 36,
+    fontSize: 48,
     color: Colors.ember,
+    lineHeight: 54,
   },
   rollBreak: {
     fontFamily: Fonts.body,
-    fontSize: 11,
+    fontSize: 15,
     color: Colors.faint,
+  },
+  rollPlaceholder: {
+    fontFamily: Fonts.body,
+    fontSize: 15,
+    color: Colors.faint,
+    fontStyle: 'italic',
   },
   actions: {
     flexDirection: 'row',
@@ -447,7 +480,7 @@ const styles = StyleSheet.create({
   },
   critBadge: {
     fontFamily: Fonts.title,
-    fontSize: 11,
+    fontSize: 15,
     color: Colors.gold,
     letterSpacing: 2,
   },

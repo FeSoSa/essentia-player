@@ -71,11 +71,12 @@ export async function requestItem(playerId: string, itemId: string): Promise<Pla
 export async function useSkill(
   playerId: string,
   slotId: string,
-  options: { diceRoll?: number; targetId?: string; targetType?: 'enemy' | 'boss' } = {}
+  options: { diceRoll?: number; targetId?: string; targetType?: 'enemy' | 'boss'; commit?: boolean } = {}
 ): Promise<DamageResult> {
   const res = await api.post<DamageResult>(`/api/players/${playerId}/use-skill`, {
     slotId,
     diceRoll: options.diceRoll,
+    commit: options.commit,
   });
   return res.data;
 }
@@ -119,8 +120,8 @@ export async function voteFastAction(playerId: string, optionId: string): Promis
   await api.post('/api/fast-action/vote', { playerId, optionId });
 }
 
-export async function skillMiss(playerId: string, costs: Record<string, number>): Promise<Player> {
-  const res = await api.post<Player>(`/api/players/${playerId}/skill-miss`, costs);
+export async function skillMiss(playerId: string, costs: Record<string, number>, slotId?: string): Promise<Player> {
+  const res = await api.post<Player>(`/api/players/${playerId}/skill-miss`, { costs, slotId });
   return res.data;
 }
 
@@ -134,6 +135,7 @@ export async function requestDamage(
     damage: number;
     costs?: Record<string, number>;
     skillId?: string;
+    slotId?: string;
   }
 ): Promise<void> {
   await api.post(`/api/players/${playerId}/damage-request`, opts);

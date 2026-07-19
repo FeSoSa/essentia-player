@@ -37,13 +37,19 @@ export const LUCIDE_TO_MCI: Record<string, keyof typeof MaterialCommunityIcons.g
   Swords:            'sword-cross',
   Dices:             'dice-multiple',
   Leaf:              'leaf',
-  Mountain:          'mountain',
+  Mountain:          'image-filter-hdr',
   Stone:             'earth',
   Waves:             'waves',
   Tornado:           'weather-tornado',
   CloudLightning:    'weather-lightning',
   TreePine:          'pine-tree',
   TreeDeciduous:     'tree',
+  Hourglass:         'timer-sand',
+  Target:            'target',
+  LensConcave:       'magnify',
+  CircleStar:        'star-circle',
+  AudioLines:        'waveform',
+  Cog:               'cog',
 };
 
 export function resolveIcon(icon?: string | null): keyof typeof MaterialCommunityIcons.glyphMap {

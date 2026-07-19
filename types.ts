@@ -47,7 +47,6 @@ export interface Slot {
   type: 'class' | 'free' | 'human_bonus';
   skillId?: string;
   cooldownRemaining: number;
-  toggleActive?: boolean;
 }
 
 export interface ItemRequirements {
@@ -59,6 +58,10 @@ export interface AutoEffect {
   trigger: string;
   type: string;
   value?: number;
+  percentual?: number;
+  attribute?: string;
+  dice?: { quantity: number; die: string };
+  costType?: string;
 }
 
 export interface OnExpireEffect {
@@ -244,6 +247,7 @@ export interface StatusEffect {
   icon?: string;
   color?: string;
   durationTurns: number;
+  effects?: AutoEffect[];
   hitBonus?: number;
   attackBonus?: number;
   damageBonus?: number;
@@ -334,13 +338,13 @@ export interface SkillTreeEntry {
   danoBase?: number;      // valor fixo de dano base
   atributo?: string;      // ex: "FOR", "AGI", "FOR/AGI"
   equilibrio?: number;    // divisor da escala de atributo; null = só dano_base
-  damageSource?: 'formula' | 'weapon'; // 'weapon' = dano calculado no servidor a partir da arma equipada
+  damageSource?: 'formula' | 'weapon'; // 'weapon' = dano calculado a partir da arma equipada
   weaponSlot?: 'mainHand' | 'offHand';
+  weaponDamageModifiers?: AutoEffect[]; // modificadores da skill sobre o dano da arma equipada
   cooldownTurns?: number;    // turnos de cooldown após uso
   skillType?: string;        // "class" | "weapon" | "essencia" | "mestre"
   actionType?: 'main' | 'bonus' | 'both';
   pressaoDice?: boolean;
-  toggle?: boolean;
   critThreshold?: number;
   buffDurationTurns?: number;
   hitBonus?: number;

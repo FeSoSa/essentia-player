@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal, View, Text, Image, TouchableOpacity, ActivityIndicator, ScrollView, StyleSheet } from 'react-native';
 import { Colors, Fonts } from '@/constants/theme';
-import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, weaponDamageFormula, unarmedDamageFormula, type ArmorWeight } from '@/lib/rules';
+import { getModifier, formatMod, initiativeBonus, getArmorWeight, xpProgress, weaponDamageFormula, unarmedDamageFormula, describeAutoEffect, type ArmorWeight } from '@/lib/rules';
 import { ResourceBar } from '@/components/ui/resource-bar';
 import { SobrecargaModal } from '@/components/ui/sobrecarga-modal';
 import { NumPad } from '@/components/ui/num-pad';
@@ -494,9 +494,7 @@ export function GeralScreen() {
         function renderSlot(slot: typeof player.slots[0] | null, key: string) {
           if (!slot) return <View key={key} style={[styles.slotBox, styles.slotEmpty]} />;
           const skill = slot.skillId ? skillMap.get(slot.skillId) : undefined;
-          const isToggle = !!skill?.toggle;
-          const isToggleOn = isToggle && !!slot.toggleActive;
-          const onCd = combatActive && slot.cooldownRemaining > 0 && !isToggle;
+          const onCd = combatActive && slot.cooldownRemaining > 0;
           const pressable = !!skill && !onCd && combatActive;
           return (
             <TouchableOpacity
@@ -507,7 +505,6 @@ export function GeralScreen() {
                 skill?.actionType === 'both'  && styles.slotActionBoth,
                 onCd        && styles.slotOnCd,
                 !skill      && styles.slotEmpty,
-                isToggleOn  && styles.slotToggleOn,
               ]}
               onPress={pressable ? () => { setSkillModalSlot(slot); setSkillModalSkill(skill!); } : undefined}
               activeOpacity={pressable ? 0.7 : 1}
@@ -515,7 +512,6 @@ export function GeralScreen() {
             >
               <Text style={styles.slotText}>{skill ? skill.nome : ''}</Text>
               {onCd && <Text style={styles.slotCdBadge}>{slot.cooldownRemaining}t</Text>}
-              {isToggleOn && <Text style={styles.slotToggleBadge}>ON</Text>}
             </TouchableOpacity>
           );
         }
@@ -610,6 +606,15 @@ export function GeralScreen() {
                     {selectedEfeito.desc
                       ? <Text style={detailStyles.desc}>{selectedEfeito.desc}</Text>
                       : <Text style={detailStyles.desc}>—</Text>}
+                    {selectedEfeito.effects && selectedEfeito.effects.length > 0 && (
+                      <View style={detailStyles.bonusRow}>
+                        {selectedEfeito.effects.map((eff, i) => (
+                          <View key={i} style={detailStyles.bonusPill}>
+                            <Text style={detailStyles.bonusText}>{describeAutoEffect(eff)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
                   </View>
                 </>
               );
@@ -1000,16 +1005,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.danger,
     backgroundColor: 'rgba(239,68,68,0.08)',
     opacity: 1,
-  },
-  slotToggleOn: {
-    borderColor: Colors.tealBright,
-    backgroundColor: 'rgba(45,212,191,0.12)',
-  },
-  slotToggleBadge: {
-    fontFamily: Fonts.title,
-    fontSize: 7,
-    color: Colors.tealBright,
-    letterSpacing: 1,
   },
   slotText: {
     fontFamily: Fonts.body,
